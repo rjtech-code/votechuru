@@ -1,0 +1,25 @@
+import { findAdminByEmail, verifyPassword } from '../utils/adminUsers.js'
+import { createSession, deleteSession } from '../utils/sessionStore.js'
+import { bearerToken } from '../middleware/authMiddleware.js'
+
+/** POST /api/admin/login — { email, password } → { success, token, user } */
+export function login(req, res) {
+  const { email, password } = req.body ?? {}
+  if (!email || !password) {
+    return res.status(400).json({ success: false, code: 'MISSING_CREDENTIALS', message: 'Email and password are required.' })
+  }
+  const user = findAdminByEmail(email)
+  // Same response for unknown email and wrong password.
+  if (!verifyPassword(user, password)) {
+    return res.status(401).json({ success: false, code: 'INVALID_CREDENTIALS', message: 'Incorrect email or password.' })
+  }
+  const token = createSession(user)
+  return res.json({ success: true, token, user })
+}
+
+/** POST /api/admin/logout — revokes the current session token. */
+export function logout(req, res) {
+  const token = bearerToken(req)
+  if (token) deleteSession(token)
+  res.json({ success: true })
+}

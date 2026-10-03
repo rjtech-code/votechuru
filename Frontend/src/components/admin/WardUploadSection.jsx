@@ -10,38 +10,32 @@ import { uploadWardSheet } from '../../services/api'
 const describe = (ward, formatNumber) => [ward.wardName, ward.areas, ward.totalVoters != null ? formatNumber(ward.totalVoters) : null].filter(Boolean).join(', ') || '—'
 
 /**
- * Ward Master sheet upload. New wards are added; identical wards are skipped; wards whose
- * details differ from the stored ones need the admin's decision (keep or replace).
+ * Ward Master sheet upload. The server previews new, identical and changed wards; the
+ * admin decides whether changed details are kept or replaced; the server then imports.
  */
 export default function WardUploadSection() {
   const { t, formatNumber } = useLanguage()
-  const { addWards, replaceWards, prepareWardPlan } = useResults()
+  const { importWards } = useResults()
 
   const importer = useSheetImport({
     validatingKey: 'admin.progress.validatingWards',
     upload: (file, { token, onUploaded }) => uploadWardSheet(file, token, { onUploaded }),
-    prepare: (json) => {
-      const plan = prepareWardPlan(json.data ?? [])
-      return {
-        conflictTitleKey: 'admin.wards.conflictTitle',
-        alternativeKey: 'admin.wards.replace',
-        conflicts: plan.conflicts.map((c) => ({
-          key: 'admin.wards.conflictLine',
-          vars: { ward: c.record.wardNo, existing: describe(c.existing, formatNumber), incoming: describe(c.record, formatNumber) },
-        })),
-        apply: (choice) => {
-          if (plan.fresh.length) addWards(plan.fresh)
-          const replace = choice === 'alternative' && plan.conflicts.length
-          if (replace) replaceWards(plan.conflicts.map((c) => c.record))
-          const lines = [{ key: 'admin.wards.addedCount', vars: { count: plan.fresh.length } }]
-          if (plan.duplicates) lines.push({ key: 'admin.wards.duplicatesSkipped', vars: { count: plan.duplicates } })
-          if (plan.conflicts.length) {
-            lines.push({ key: replace ? 'admin.wards.replacedCount' : 'admin.wards.keptCount', vars: { count: plan.conflicts.length } })
-          }
-          return { lines }
-        },
-      }
-    },
+    prepare: (preview) => ({
+      conflictTitleKey: 'admin.wards.conflictTitle',
+      alternativeKey: 'admin.wards.replace',
+      conflicts: (preview.conflicts ?? []).map((c) => ({
+        key: 'admin.wards.conflictLine',
+        vars: { ward: c.record.wardNo, existing: describe(c.existing, formatNumber), incoming: describe(c.record, formatNumber) },
+      })),
+      apply: async (choice) => {
+        const summary = await importWards(preview.data, choice === 'alternative' ? 'replace' : 'keep')
+        const lines = [{ key: 'admin.wards.addedCount', vars: { count: summary.added } }]
+        if (summary.duplicates) lines.push({ key: 'admin.wards.duplicatesSkipped', vars: { count: summary.duplicates } })
+        if (summary.replaced) lines.push({ key: 'admin.wards.replacedCount', vars: { count: summary.replaced } })
+        if (summary.kept) lines.push({ key: 'admin.wards.keptCount', vars: { count: summary.kept } })
+        return { lines }
+      },
+    }),
   })
 
   return (

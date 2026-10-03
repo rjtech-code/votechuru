@@ -12,12 +12,10 @@ import { useResults } from '../../context/ResultsContext'
 import { useToast } from '../../context/ToastContext'
 import { useLanguage } from '../../i18n/I18nContext'
 
-const codeError = (code) => Object.assign(new Error(code), { code })
-
 /** /admin/upload — candidate results from Excel, or one at a time. */
 export default function AdminUpload() {
   const { t } = useLanguage()
-  const { wardMaster, addCandidates, checkCandidate } = useResults()
+  const { wardMaster, createCandidate } = useResults()
   const notify = useToast()
   const { hash } = useLocation()
   const [conflict, setConflict] = useState(null) // { record, existing, resolve }
@@ -26,18 +24,21 @@ export default function AdminUpload() {
     if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth' })
   }, [hash])
 
+  /** The server checks the ward, duplicates and conflicts; a conflict needs the admin's decision. */
   const addManual = async (record) => {
-    const check = checkCandidate(record)
-    if (check.duplicate) throw codeError('DUPLICATE_RECORD')
-    if (check.conflict) {
-      // Never overwrite: the admin decides; "Keep existing" is the default.
-      const addSeparate = await new Promise((resolve) => setConflict({ record, existing: check.conflict, resolve }))
+    let response
+    try {
+      response = await createCandidate(record)
+    } catch (error) {
+      if (error.code !== 'CONFLICT') throw error
+      // Never overwrite: "Keep existing" is the default; adding a separate record is explicit.
+      const addSeparate = await new Promise((resolve) => setConflict({ record, existing: error.details.existing, resolve }))
       setConflict(null)
       if (!addSeparate) return false
+      response = await createCandidate(record, 'add')
     }
-    const { reopened } = addCandidates([record])
     notify(t('admin.manual.added'))
-    if (reopened.length) notify(t('admin.results.autoReopened', { wards: reopened.join(', ') }), 'warning')
+    if (response.reopened?.length) notify(t('admin.results.autoReopened', { wards: response.reopened.join(', ') }), 'warning')
     return true
   }
 

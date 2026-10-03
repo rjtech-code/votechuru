@@ -12,9 +12,10 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  *   uploading → checking (server) → validating (against stored data) → success,
  * pausing for an explicit decision when conflicts are found.
  *
- * upload(file, { token, onUploaded }) → Promise<server JSON>
+ * upload(file, { token, onUploaded }) → Promise<server preview JSON>
  * prepare(json) → { conflicts: [{ key, vars }], conflictTitleKey?, alternativeKey?,
- *                   apply(choice: 'keep' | 'alternative') → { lines, rejected } }
+ *                   apply(choice: 'keep' | 'alternative') → Promise<{ lines, rejected }> }
+ * The server validates again when `apply` confirms the import.
  */
 export function useSheetImport({ upload, prepare, validatingKey }) {
   const { token, logout } = useAuth()
@@ -31,14 +32,19 @@ export function useSheetImport({ upload, prepare, validatingKey }) {
     setProgress(null)
   }, [])
 
-  const finish = (prepared, choice, fileName) => {
+  const finish = async (prepared, choice, fileName) => {
+    setProgress({ stage: 'validating', fileName, validatingKey })
     try {
-      const { lines, rejected = [] } = prepared.apply(choice)
+      const { lines, rejected = [] } = await prepared.apply(choice)
       setProgress({ stage: 'success', fileName, lines, rejected })
       // Stay open when rows were rejected so the admin can read them.
       if (!rejected.length) closeTimer.current = setTimeout(() => setProgress(null), SUCCESS_CLOSE_MS)
       return true
     } catch (error) {
+      if (error.code === 'UNAUTHORIZED') {
+        setProgress(null)
+        return false
+      }
       setProgress({ stage: 'error', fileName, error })
       return false
     }

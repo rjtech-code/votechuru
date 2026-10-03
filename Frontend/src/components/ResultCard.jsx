@@ -57,7 +57,7 @@ export default function ResultCard({ ward, variant = 'card' }) {
         </dl>
       ) : (
         <p className="mt-4 text-sm text-slate-500">
-          {ward.status === 'tie' ? t('result.tieNote') : ward.rows.length ? t('result.pendingNote') : t('result.noCandidates')}
+          {ward.status === 'tie' ? t('result.tieNote') : ward.rows.length || ward.withheld ? t('result.pendingNote') : t('result.noCandidates')}
         </p>
       )}
 

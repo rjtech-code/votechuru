@@ -152,8 +152,8 @@ function WardBlock({ ward, rows, mode, onDeclare, onReopen, onDeleteWard, onEdit
 
 /** Ward-grouped admin result list (wards by number, candidates by votes) with all result actions. */
 export default function WardResultList() {
-  const { t, formatNumber } = useLanguage()
-  const { wards, updateCandidate, deleteCandidate, deleteWardCandidates, declareWard, reopenWard, checkCandidate } = useResults()
+  const { t, formatNumber, errorText } = useLanguage()
+  const { wards, updateCandidate, deleteCandidate, deleteWardCandidates, declareWard, reopenWard } = useResults()
   const { openProfile } = useCandidateProfile()
   const notify = useToast()
   const [searchParams] = useSearchParams()
@@ -166,6 +166,14 @@ export default function WardResultList() {
   const close = () => setDialog(null)
   const reportReopened = (reopened) => {
     if (reopened?.length) notify(t('admin.results.autoReopened', { wards: reopened.join(', ') }), 'warning')
+  }
+  /** Runs a server action; failures become a toast (an expired session is handled by the context). */
+  const run = async (action) => {
+    try {
+      await action()
+    } catch (error) {
+      if (error.code !== 'UNAUTHORIZED') notify(errorText(error), 'error')
+    }
   }
 
   const q = filters.q.trim()
@@ -181,11 +189,11 @@ export default function WardResultList() {
   }
 
   const saveEdit = async (record) => {
-    if (checkCandidate(record, dialog.record.id).duplicate) throw Object.assign(new Error('Duplicate'), { code: 'DUPLICATE_RECORD' })
-    const reopened = updateCandidate(dialog.record.id, record)
+    // The server rejects duplicates (DUPLICATE_RECORD) and unknown wards; the form shows those.
+    const response = await updateCandidate(dialog.record.id, record)
     close()
     notify(t('admin.results.updated'))
-    reportReopened(reopened)
+    reportReopened(response.reopened)
   }
 
   const recordLine = (r) => t('admin.results.recordLine', { name: r.name, ward: r.wardNo, votes: formatNumber(r.totalVotes) })
@@ -280,9 +288,19 @@ export default function WardResultList() {
         }
         confirmLabel={t('admin.results.declare')}
         confirmVariant="primary"
-        onConfirm={() => {
-          declareWard(dialog.ward.wardNo)
-          notify(t('admin.results.declared', { ward: dialog.ward.wardNo }))
+        onConfirm={async () => {
+          const ward = dialog.ward
+          try {
+            await declareWard(ward.wardNo)
+            notify(t('admin.results.declared', { ward: ward.wardNo }))
+          } catch (error) {
+            // The server is the final check: a tie found there opens the tie explanation.
+            if (error.code === 'TIE') {
+              setDialog({ type: 'tied', ward })
+              return false
+            }
+            if (error.code !== 'UNAUTHORIZED') notify(errorText(error), 'error')
+          }
         }}
         onClose={close}
       />
@@ -300,10 +318,12 @@ export default function WardResultList() {
         message={dialog?.type === 'reopen' && t('admin.results.reopenConfirm', { ward: dialog.ward.wardNo })}
         confirmLabel={t('admin.results.reopen')}
         confirmVariant="primary"
-        onConfirm={() => {
-          reopenWard(dialog.ward.wardNo)
-          notify(t('admin.results.reopened', { ward: dialog.ward.wardNo }))
-        }}
+        onConfirm={() =>
+          run(async () => {
+            await reopenWard(dialog.ward.wardNo)
+            notify(t('admin.results.reopened', { ward: dialog.ward.wardNo }))
+          })
+        }
         onClose={close}
       />
 
@@ -312,10 +332,12 @@ export default function WardResultList() {
         title={t('admin.results.deleteWardTitle')}
         message={dialog?.type === 'deleteWard' && t('admin.results.deleteWardConfirm', { ward: dialog.ward.wardNo, count: formatNumber(dialog.ward.rows.length) })}
         confirmLabel={t('admin.results.deleteWard')}
-        onConfirm={() => {
-          deleteWardCandidates(dialog.ward.wardNo)
-          notify(t('admin.results.wardDeleted', { ward: dialog.ward.wardNo }))
-        }}
+        onConfirm={() =>
+          run(async () => {
+            await deleteWardCandidates(dialog.ward.wardNo)
+            notify(t('admin.results.wardDeleted', { ward: dialog.ward.wardNo }))
+          })
+        }
         onClose={close}
       />
 
@@ -331,11 +353,13 @@ export default function WardResultList() {
           )
         }
         confirmLabel={t('admin.results.deleteCandidate')}
-        onConfirm={() => {
-          const reopened = deleteCandidate(dialog.record.id)
-          notify(t('admin.results.deleted'))
-          reportReopened(reopened)
-        }}
+        onConfirm={() =>
+          run(async () => {
+            const response = await deleteCandidate(dialog.record.id)
+            notify(t('admin.results.deleted'))
+            reportReopened(response.reopened)
+          })
+        }
         onClose={close}
       />
 

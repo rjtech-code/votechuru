@@ -27,7 +27,7 @@ function DangerRow({ title, text, note, button, icon, disabled, onClick }) {
  * the Ward Master can only be reset once no candidate records depend on it.
  */
 export default function DangerZone() {
-  const { t, formatNumber } = useLanguage()
+  const { t, formatNumber, errorText } = useLanguage()
   const { candidates, wardMaster, resetResults, resetWards } = useResults()
   const { electionDateTime, resultDeclarationDateTime, clearSchedule } = useSettings()
   const notify = useToast()
@@ -44,8 +44,8 @@ export default function DangerZone() {
         </>
       ),
       label: t('admin.danger.button'),
-      run: () => {
-        resetResults()
+      run: async () => {
+        await resetResults()
         notify(t('admin.danger.done'))
       },
     },
@@ -53,8 +53,8 @@ export default function DangerZone() {
       title: t('admin.danger.wardsConfirmTitle'),
       message: t('admin.danger.wardsConfirmText', { count: formatNumber(wardMaster.length) }),
       label: t('admin.danger.wardsButton'),
-      run: () => {
-        resetWards()
+      run: async () => {
+        await resetWards()
         notify(t('admin.danger.wardsDone'))
       },
     },
@@ -62,8 +62,8 @@ export default function DangerZone() {
       title: t('admin.danger.scheduleConfirmTitle'),
       message: t('admin.danger.scheduleConfirmText'),
       label: t('admin.danger.scheduleButton'),
-      run: () => {
-        clearSchedule()
+      run: async () => {
+        await clearSchedule()
         notify(t('admin.danger.scheduleDone'))
       },
     },
@@ -107,7 +107,13 @@ export default function DangerZone() {
           onClick={() => setConfirming('schedule')}
         />
       </div>
-      <ConfirmDialog open={Boolean(dialog)} title={dialog?.title} message={dialog?.message} confirmLabel={dialog?.label} onConfirm={() => dialog.run()} onClose={close} />
+      <ConfirmDialog open={Boolean(dialog)} title={dialog?.title} message={dialog?.message} confirmLabel={dialog?.label} onConfirm={async () => {
+          try {
+            await dialog.run()
+          } catch (error) {
+            if (error.code !== 'UNAUTHORIZED') notify(errorText(error), 'error')
+          }
+        }} onClose={close} />
     </section>
   )
 }

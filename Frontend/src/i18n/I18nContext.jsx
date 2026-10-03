@@ -84,7 +84,13 @@ export function LanguageProvider({ children }) {
     const formatWeekday = (input) => (input ? toDate(input).toLocaleDateString(locale, { weekday: 'long' }) : '')
     const formatTime = (input) => (input ? new Date(input).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' }) : '')
 
-    return { language, setLanguage, t, tx, loc, formatNumber, formatPercent, formatDate, formatDateTime, formatWeekday, formatTime }
+    /** Translated message for an API error (falls back to a generic message for unknown codes). */
+    const errorText = (error) => {
+      const text = error?.code && dictionary.errors?.[error.code]
+      return typeof text === 'string' ? text : dictionary.errors.generic
+    }
+
+    return { language, setLanguage, t, tx, loc, errorText, formatNumber, formatPercent, formatDate, formatDateTime, formatWeekday, formatTime }
   }, [language, setLanguage])
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>

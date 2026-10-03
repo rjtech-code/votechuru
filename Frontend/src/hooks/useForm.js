@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { translations } from '../i18n/translations'
 
 /**
  * Minimal form state. Validates on submit; afterwards, errors that are shown clear
@@ -40,7 +41,7 @@ export function useForm(initialValues, validate) {
       await onValid(values)
     } catch (error) {
       // Coded service errors (ValidationError) map to errors.<code> translation keys.
-      setFormError(error.code ? `errors.${error.code}` : 'errors.generic')
+      setFormError(error.code && translations.en.errors[error.code] ? `errors.${error.code}` : 'errors.generic')
     } finally {
       setSubmitting(false)
     }

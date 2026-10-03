@@ -18,7 +18,7 @@ function toInputs(iso) {
 
 /** Editor for one scheduled event; the weekday is calculated from the chosen date. */
 function EventEditor({ settingKey, labelKey }) {
-  const { t, formatDate, formatWeekday, formatTime } = useLanguage()
+  const { t, errorText, formatDate, formatWeekday, formatTime } = useLanguage()
   const settings = useSettings()
   const notify = useToast()
   const stored = settings[settingKey]
@@ -28,7 +28,7 @@ function EventEditor({ settingKey, labelKey }) {
   const label = t(labelKey)
   const isFuture = stored && new Date(stored).getTime() > Date.now()
 
-  const save = (event) => {
+  const save = async (event) => {
     event.preventDefault()
     const next = {}
     if (!values.date) next.date = 'admin.schedule.dateRequired'
@@ -36,10 +36,10 @@ function EventEditor({ settingKey, labelKey }) {
     setErrors(next)
     if (Object.keys(next).length) return
     try {
-      settings.setEventDateTime(settingKey, new Date(`${values.date}T${values.time}:00`).toISOString())
+      await settings.setEventDateTime(settingKey, new Date(`${values.date}T${values.time}:00`).toISOString())
       notify(t('admin.schedule.saved'))
     } catch (error) {
-      notify(t(error.code === 'STORAGE_FULL' ? 'errors.STORAGE_FULL' : 'errors.generic'), 'error')
+      if (error.code !== 'UNAUTHORIZED') notify(errorText(error), 'error')
     }
   }
 
@@ -82,10 +82,14 @@ function EventEditor({ settingKey, labelKey }) {
         title={t('admin.schedule.clearTitle')}
         message={t('admin.schedule.clearConfirm', { event: label })}
         confirmLabel={t('admin.schedule.clear')}
-        onConfirm={() => {
-          settings.setEventDateTime(settingKey, null)
-          setValues({ date: '', time: '' })
-          notify(t('admin.schedule.cleared'))
+        onConfirm={async () => {
+          try {
+            await settings.setEventDateTime(settingKey, null)
+            setValues({ date: '', time: '' })
+            notify(t('admin.schedule.cleared'))
+          } catch (error) {
+            if (error.code !== 'UNAUTHORIZED') notify(errorText(error), 'error')
+          }
         }}
         onClose={() => setConfirming(false)}
       />

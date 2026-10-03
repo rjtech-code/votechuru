@@ -8,33 +8,39 @@ import { useSheetImport } from '../../hooks/useSheetImport'
 import { uploadCandidateSheet } from '../../services/api'
 
 /**
- * Candidate result sheet upload. The server validates columns and rows and rejects rows
- * whose ward is not in the Ward Master; the rest are appended here. Exact duplicates are
- * skipped and conflicting vote counts need the admin's decision. Nothing is overwritten.
+ * Candidate result sheet upload. The server validates columns and rows, rejects rows whose
+ * ward is not in the Ward Master and previews duplicates/conflicts; confirming runs the
+ * server-side import, which re-validates and only appends. Nothing is overwritten, and
+ * nothing becomes public until the ward is declared.
  */
 export default function CandidateUploadSection() {
   const { t } = useLanguage()
-  const { wardMaster, addCandidates, prepareCandidatePlan } = useResults()
+  const { wardMaster, importCandidates } = useResults()
 
   const importer = useSheetImport({
     validatingKey: 'admin.progress.validatingCandidates',
-    upload: (file, { token, onUploaded }) => uploadCandidateSheet(file, token, { wardNos: wardMaster.map((w) => w.wardNo), onUploaded }),
-    prepare: (json) => {
-      const rejected = (json.rejected ?? []).map((r) => ({ key: 'admin.progress.rejectedRow', vars: { row: r.row, ward: r.wardNo } }))
-      const plan = prepareCandidatePlan((json.data ?? []).map(({ row, ...record }) => record))
+    upload: (file, { token, onUploaded }) => uploadCandidateSheet(file, token, { onUploaded }),
+    prepare: (preview) => {
+      const previewRejected = (preview.rejected ?? []).map((r) => ({ key: 'admin.progress.rejectedRow', vars: { row: r.row, ward: r.wardNo } }))
       return {
-        conflicts: plan.conflicts.map((c) => ({
+        conflicts: (preview.conflicts ?? []).map((c) => ({
           key: 'admin.results.conflictUpload',
           vars: { name: c.existing.name, ward: c.record.wardNo, existing: c.existing.totalVotes, incoming: c.record.totalVotes },
         })),
-        apply: (choice) => {
-          const records = choice === 'alternative' ? [...plan.fresh, ...plan.conflicts.map((c) => c.record)] : plan.fresh
-          const { added, reopened } = records.length ? addCandidates(records) : { added: 0, reopened: [] }
-          const lines = [{ key: 'admin.progress.added', vars: { count: added } }]
-          if (plan.duplicates) lines.push({ key: 'admin.progress.skipped', vars: { count: plan.duplicates } })
-          if (choice === 'keep' && plan.conflicts.length) lines.push({ key: 'admin.progress.conflictsKept', vars: { count: plan.conflicts.length } })
+        apply: async (choice) => {
+          const summary = preview.data.length
+            ? await importCandidates(preview.data, choice === 'alternative' ? 'add' : 'keep')
+            : { added: 0, duplicates: 0, conflictsKept: 0, rejected: [], reopened: [] }
+          // Rows the import itself rejected (e.g. a ward deleted after the preview).
+          const rejected = [
+            ...previewRejected,
+            ...summary.rejected.map((r) => ({ key: 'admin.progress.rejectedRecord', vars: { name: r.name, ward: r.wardNo } })),
+          ]
+          const lines = [{ key: 'admin.progress.added', vars: { count: summary.added } }]
+          if (summary.duplicates) lines.push({ key: 'admin.progress.skipped', vars: { count: summary.duplicates } })
+          if (summary.conflictsKept) lines.push({ key: 'admin.progress.conflictsKept', vars: { count: summary.conflictsKept } })
           if (rejected.length) lines.push({ key: 'admin.progress.rejectedCount', vars: { count: rejected.length }, tone: 'warning' })
-          if (reopened.length) lines.push({ key: 'admin.results.autoReopened', vars: { wards: reopened.join(', ') }, tone: 'warning' })
+          if (summary.reopened.length) lines.push({ key: 'admin.results.autoReopened', vars: { wards: summary.reopened.join(', ') }, tone: 'warning' })
           return { lines, rejected }
         },
       }

@@ -25,7 +25,7 @@ function WinnerPanel({ ward }) {
           {tie ? <Scale className="h-4 w-4" aria-hidden="true" /> : <Clock className="h-4 w-4" aria-hidden="true" />}
           {tie ? t('status.Tie') : t('result.pendingTitle')}
         </p>
-        <p className="mt-2 text-sm text-slate-700">{tie ? t('result.tieNote') : ward.rows.length ? t('result.pendingNote') : t('result.noCandidates')}</p>
+        <p className="mt-2 text-sm text-slate-700">{tie ? t('result.tieNote') : ward.rows.length || ward.withheld ? t('result.pendingNote') : t('result.noCandidates')}</p>
       </Card>
     )
   }
@@ -79,7 +79,7 @@ function CandidateList({ ward }) {
           ))}
         </ul>
       ) : (
-        <p className="px-5 py-4 text-sm text-slate-500">{t('result.noCandidates')}</p>
+        <p className="px-5 py-4 text-sm text-slate-500">{t(ward.withheld ? 'result.pendingNote' : 'result.noCandidates')}</p>
       )}
     </Card>
   )

@@ -4,6 +4,7 @@ import { CheckCircle2, Loader2, Scale, XCircle } from 'lucide-react'
 import Button from '../ui/Button'
 import ConflictList from './ConflictList'
 import { useLanguage } from '../../i18n/I18nContext'
+import { translations } from '../../i18n/translations'
 import { cn } from '../../lib/format'
 
 const STEP = { uploading: 1, checking: 2, validating: 3, success: 4 }
@@ -28,9 +29,9 @@ function describeError(error) {
     }))
     return { message: { key: 'admin.progress.errors.INVALID_ROWS' }, items, total: details.errorCount ?? items.length }
   }
-  const key = ['NO_ROWS', 'EMPTY_SHEET', 'TOO_MANY_ROWS', 'INVALID_FILE_TYPE', 'FILE_TOO_LARGE', 'PARSE_ERROR', 'NO_FILE', 'UPLOAD_ERROR'].includes(code)
+  const key = translations.en.admin.progress.errors[code]
     ? `admin.progress.errors.${code}`
-    : ['UNAUTHORIZED', 'NETWORK_ERROR', 'STORAGE_FULL', 'WARD_NOT_FOUND'].includes(code)
+    : translations.en.errors[code]
       ? `errors.${code}`
       : 'errors.generic'
   return { message: { key }, items: [] }

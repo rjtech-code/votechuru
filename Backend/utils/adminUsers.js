@@ -2,13 +2,13 @@ import { timingSafeEqual } from 'node:crypto'
 import { config } from '../config.js'
 
 /**
- * Admin user lookup. Today this is a single configured Super Admin; later this module
- * becomes a database query, and verifyPassword() a bcrypt/argon2 hash comparison.
+ * Super Admin lookup. The single account is configured with SUPER_ADMIN_EMAIL and
+ * SUPER_ADMIN_PASSWORD; later this can become a database query with hashed passwords.
  */
 export function findAdminByEmail(email) {
   const normalized = String(email ?? '').trim().toLowerCase()
   if (normalized !== config.admin.email) return null
-  return { email: config.admin.email, name: config.admin.name, role: config.admin.role }
+  return { email: config.admin.email, name: 'Super Admin', role: 'super_admin' }
 }
 
 /** Constant-time comparison so response timing does not leak how much of the password matched. */

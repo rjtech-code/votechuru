@@ -13,10 +13,10 @@ import { prepareCandidateImage } from '../lib/image'
 
 const CandidateProfileContext = createContext(null)
 
-const IMAGE_ERRORS = { IMAGE_INVALID: 'profile.imageInvalid', IMAGE_TOO_LARGE: 'profile.imageTooLarge', IMAGE_ERROR: 'profile.imageError', STORAGE_FULL: 'errors.STORAGE_FULL' }
+const IMAGE_ERRORS = { IMAGE_INVALID: 'profile.imageInvalid', IMAGE_TOO_LARGE: 'profile.imageTooLarge', IMAGE_ERROR: 'profile.imageError' }
 
 function ProfileBody({ candidate, manage }) {
-  const { t, formatNumber, formatPercent } = useLanguage()
+  const { t, formatNumber, formatPercent, errorText } = useLanguage()
   const { setCandidateImage } = useResults()
   const notify = useToast()
   const inputRef = useRef(null)
@@ -31,10 +31,12 @@ function ProfileBody({ candidate, manage }) {
     setErrorKey('')
     setBusy(true)
     try {
-      setCandidateImage(candidate.id, await prepareCandidateImage(file))
+      await setCandidateImage(candidate.id, await prepareCandidateImage(file))
       notify(t('profile.imageSaved'))
     } catch (error) {
-      setErrorKey(IMAGE_ERRORS[error.code] ?? 'profile.imageError')
+      if (error.code === 'UNAUTHORIZED') return
+      setErrorKey(IMAGE_ERRORS[error.code] ?? (error.status ? '' : 'profile.imageError'))
+      if (!IMAGE_ERRORS[error.code] && error.status) notify(errorText(error), 'error')
     } finally {
       setBusy(false)
       if (inputRef.current) inputRef.current.value = ''
@@ -100,10 +102,18 @@ function ProfileBody({ candidate, manage }) {
                 <Button
                   variant="danger"
                   size="sm"
-                  onClick={() => {
-                    setCandidateImage(candidate.id, null)
-                    setConfirmRemove(false)
-                    notify(t('profile.imageRemoved'))
+                  loading={busy}
+                  onClick={async () => {
+                    setBusy(true)
+                    try {
+                      await setCandidateImage(candidate.id, null)
+                      setConfirmRemove(false)
+                      notify(t('profile.imageRemoved'))
+                    } catch (error) {
+                      if (error.code !== 'UNAUTHORIZED') notify(errorText(error), 'error')
+                    } finally {
+                      setBusy(false)
+                    }
                   }}
                 >
                   {t('profile.removeImage')}
@@ -134,7 +144,7 @@ function ProfileBody({ candidate, manage }) {
  */
 export function CandidateProfileProvider({ children }) {
   const { t } = useLanguage()
-  const { getCandidate } = useResults()
+  const { getCandidate, scope } = useResults()
   const { user } = useAuth()
   const [open, setOpen] = useState(null) // { id, manage }
 
@@ -148,7 +158,7 @@ export function CandidateProfileProvider({ children }) {
       {children}
       <Modal open={Boolean(open)} onClose={close} title={t('profile.title')} size="sm">
         {candidate ? (
-          <ProfileBody key={candidate.id} candidate={candidate} manage={open.manage && Boolean(user)} />
+          <ProfileBody key={candidate.id} candidate={candidate} manage={open.manage && scope === 'admin' && Boolean(user)} />
         ) : (
           <p className="text-sm text-slate-600">{t('profile.notFound')}</p>
         )}

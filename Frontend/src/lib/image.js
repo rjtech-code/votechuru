@@ -1,6 +1,6 @@
 /**
- * Candidate photos are stored in localStorage, so they are resized in the browser to a
- * small JPEG first (max 320px, ~20–40 KB) to stay well inside the storage quota.
+ * Candidate photos are resized in the browser to a small JPEG (max 320px, ~20–40 KB)
+ * before upload; the server checks the type and size again before storing them.
  */
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 const MAX_INPUT_BYTES = 5 * 1024 * 1024

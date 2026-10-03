@@ -51,7 +51,7 @@ function WardGroup({ ward, rows }) {
           ))}
         </ul>
       ) : (
-        <p className="px-5 py-4 text-sm text-slate-500">{t('result.noCandidates')}</p>
+        <p className="px-5 py-4 text-sm text-slate-500">{t(ward.withheld ? (ward.status === 'tie' ? 'result.tieNote' : 'result.pendingNote') : 'result.noCandidates')}</p>
       )}
       {ward.status !== 'declared' && ward.rows.length > 0 && (
         <p className="border-t border-slate-100 bg-slate-50/60 px-5 py-2.5 text-xs text-slate-500">

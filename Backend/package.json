@@ -8,7 +8,9 @@
     "dev": "node --watch --env-file-if-exists=.env server.js"
   },
   "dependencies": {
+    "cors": "^2.8.6",
     "express": "^4.21.2",
+    "mongoose": "^8.24.4",
     "multer": "^2.4.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }

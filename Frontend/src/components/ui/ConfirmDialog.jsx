@@ -10,8 +10,8 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, conf
   const handleConfirm = async () => {
     setBusy(true)
     try {
-      await onConfirm()
-      onClose()
+      // onConfirm may return false to keep control of the dialog (e.g. it opened another one).
+      if ((await onConfirm()) !== false) onClose()
     } finally {
       setBusy(false)
     }

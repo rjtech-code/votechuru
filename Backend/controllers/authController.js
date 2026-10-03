@@ -1,5 +1,5 @@
 import { findAdminByEmail, verifyPassword } from '../utils/adminUsers.js'
-import { createSession, deleteSession } from '../utils/sessionStore.js'
+import { createToken, revokeToken } from '../utils/token.js'
 import { bearerToken } from '../middleware/authMiddleware.js'
 
 /** POST /api/admin/login — { email, password } → { success, token, user } */
@@ -13,13 +13,16 @@ export function login(req, res) {
   if (!verifyPassword(user, password)) {
     return res.status(401).json({ success: false, code: 'INVALID_CREDENTIALS', message: 'Incorrect email or password.' })
   }
-  const token = createSession(user)
-  return res.json({ success: true, token, user })
+  return res.json({ success: true, token: createToken(user), user })
 }
 
-/** POST /api/admin/logout — revokes the current session token. */
+/** POST /api/admin/logout — revokes the current token. */
 export function logout(req, res) {
-  const token = bearerToken(req)
-  if (token) deleteSession(token)
+  revokeToken(bearerToken(req))
   res.json({ success: true })
+}
+
+/** GET /api/admin/me — confirms the session is still valid. */
+export function me(req, res) {
+  res.json({ success: true, user: { email: req.admin.email, name: 'Super Admin', role: req.admin.role } })
 }

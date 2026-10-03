@@ -1,41 +1,53 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { KEYS, loadSettings, saveSettings } from '../services/resultStorage'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { admin as adminApi, getSettings } from '../services/api'
+import { useAuth } from './AuthContext'
 
 const SettingsContext = createContext(null)
+const REFRESH_MS = 5 * 60 * 1000
 
 /**
- * Election schedule (stored separately as churuElectionSettings):
- * { electionDateTime, resultDeclarationDateTime } — ISO strings or null.
- * Countdowns are always calculated from these values; remaining time is never stored.
+ * Election schedule from the API: { electionDateTime, resultDeclarationDateTime } (ISO or null).
+ * Countdowns are calculated from these values; remaining time is never stored.
  */
 export function SettingsProvider({ children }) {
-  const [settings, setSettings] = useState(loadSettings)
-  const settingsRef = useRef(settings)
-  settingsRef.current = settings
+  const { token, handleUnauthorized } = useAuth()
+  const [settings, setSettings] = useState({ electionDateTime: null, resultDeclarationDateTime: null })
+
+  const load = useCallback(async () => {
+    try {
+      setSettings(await getSettings())
+    } catch {
+      // Keep the last known schedule; countdowns simply stay hidden if none is known.
+    }
+  }, [])
 
   useEffect(() => {
-    const onStorage = (event) => {
-      if (event.key === KEYS.settings || event.key === null) setSettings(loadSettings())
-    }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
+    load()
+    const timer = setInterval(load, REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [load])
+
+  const save = useCallback(
+    async (fn) => {
+      try {
+        const response = await fn(token)
+        setSettings(response.settings)
+      } catch (error) {
+        if (error.code === 'UNAUTHORIZED') handleUnauthorized()
+        throw error
+      }
+    },
+    [token, handleUnauthorized],
+  )
 
   /** key: 'electionDateTime' | 'resultDeclarationDateTime'; value: ISO string or null. */
-  const setEventDateTime = useCallback((key, value) => {
-    const next = { ...settingsRef.current, [key]: value }
-    saveSettings(next) // throws STORAGE_FULL before any state changes
-    settingsRef.current = next
-    setSettings(next)
-  }, [])
+  const setEventDateTime = useCallback(
+    (key, value) => save((t) => (key === 'electionDateTime' ? adminApi.setElection(t, value) : adminApi.setResultDeclaration(t, value))),
+    [save],
+  )
+  const clearSchedule = useCallback(() => save((t) => adminApi.clearSchedule(t)), [save])
 
-  const clearSchedule = useCallback(() => {
-    const next = { electionDateTime: null, resultDeclarationDateTime: null }
-    saveSettings(next)
-    setSettings(next)
-  }, [])
-
-  const value = useMemo(() => ({ ...settings, setEventDateTime, clearSchedule }), [settings, setEventDateTime, clearSchedule])
+  const value = useMemo(() => ({ ...settings, setEventDateTime, clearSchedule, reload: load }), [settings, setEventDateTime, clearSchedule, load])
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>
 }
 

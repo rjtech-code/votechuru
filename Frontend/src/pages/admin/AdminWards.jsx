@@ -64,7 +64,7 @@ function WardForm({ ward, onSubmit, onClose }) {
 
 /** /admin/wards — Ward Master upload and management. */
 export default function AdminWards() {
-  const { t, formatNumber } = useLanguage()
+  const { t, formatNumber, errorText } = useLanguage()
   const { wards, addWard, updateWard, deleteWard } = useResults()
   const notify = useToast()
   const [query, setQuery] = useState('')
@@ -110,10 +110,10 @@ export default function AdminWards() {
 
   const saveWard = async (record) => {
     if (dialog.type === 'add') {
-      addWard(record)
+      await addWard(record)
       notify(t('admin.wards.added'))
     } else {
-      updateWard(dialog.ward.wardNo, record)
+      await updateWard(dialog.ward.wardNo, record)
       notify(t('admin.wards.updated'))
     }
     close()
@@ -216,9 +216,13 @@ export default function AdminWards() {
           ))
         }
         confirmLabel={deleting?.rows.length ? t('admin.wards.deleteWithCandidates') : t('admin.wards.deleteWard')}
-        onConfirm={() => {
-          deleteWard(deleting.wardNo, { withCandidates: deleting.rows.length > 0 })
-          notify(t('admin.wards.deleted'))
+        onConfirm={async () => {
+          try {
+            await deleteWard(deleting.wardNo, { withCandidates: deleting.rows.length > 0 })
+            notify(t('admin.wards.deleted'))
+          } catch (error) {
+            if (error.code !== 'UNAUTHORIZED') notify(errorText(error), 'error')
+          }
         }}
         onClose={close}
       />

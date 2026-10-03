@@ -160,3 +160,19 @@ export function validateCandidateSheet(rows, { knownWards, ...options }) {
   }
   return { ok: true, data, rejected }
 }
+
+/**
+ * Validates one record sent as JSON by the admin panel (manual entry, edit or import
+ * confirmation) with the same field rules as spreadsheet rows.
+ * Returns { record } or { errors: [{ field, code }] }.
+ */
+export function validateRecord(schemaName, raw = {}) {
+  const record = {}
+  const errors = []
+  for (const field of SCHEMAS[schemaName]) {
+    const result = field.parse(raw[field.key])
+    if (result.code) errors.push({ field: field.header, code: result.code })
+    else record[field.key] = result.value
+  }
+  return errors.length ? { errors } : { record }
+}

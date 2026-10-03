@@ -1,154 +1,98 @@
-import { useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import AdminPageHeader from '../../components/admin/AdminPageHeader'
-import ExcelUploader from '../../components/admin/ExcelUploader'
-import UploadProgressModal from '../../components/admin/UploadProgressModal'
+import CandidateUploadSection from '../../components/admin/CandidateUploadSection'
 import ManualResultForm from '../../components/admin/ManualResultForm'
+import ConflictList from '../../components/admin/ConflictList'
+import ColumnList from '../../components/admin/ColumnList'
 import { Card, CardHeader } from '../../components/ui/Card'
-import { useAuth } from '../../context/AuthContext'
+import Button from '../../components/ui/Button'
+import Modal from '../../components/ui/Modal'
 import { useResults } from '../../context/ResultsContext'
 import { useToast } from '../../context/ToastContext'
 import { useLanguage } from '../../i18n/I18nContext'
-import { uploadResults } from '../../services/api'
 
-// Each stage stays on screen at least this long so the admin can read it.
-const MIN_STAGE_MS = 700
-const SUCCESS_CLOSE_MS = 1800
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const codeError = (code) => Object.assign(new Error(code), { code })
 
+/** /admin/upload — candidate results from Excel, or one at a time. */
 export default function AdminUpload() {
   const { t } = useLanguage()
-  const { token, logout } = useAuth()
-  const { addResults, findDuplicates } = useResults()
+  const { wardMaster, addCandidates, checkCandidate } = useResults()
   const notify = useToast()
-  const navigate = useNavigate()
-  const [progress, setProgress] = useState(null)
-  const pendingRef = useRef(null)
-  const closeTimer = useRef(null)
-
   const { hash } = useLocation()
+  const [conflict, setConflict] = useState(null) // { record, existing, resolve }
 
-  useEffect(() => () => clearTimeout(closeTimer.current), [])
-
-  // The dashboard's "add manually" shortcut links to #manual.
   useEffect(() => {
-    if (hash === '#manual') document.getElementById('manual')?.scrollIntoView({ behavior: 'smooth' })
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth' })
   }, [hash])
 
-  const closeProgress = () => {
-    clearTimeout(closeTimer.current)
-    pendingRef.current = null
-    setProgress(null)
-  }
-
-  /** Saves validated records; any storage failure is shown in the popup and nothing is kept. */
-  const save = (records, skipped, fileName) => {
-    try {
-      const added = records.length ? addResults(records) : 0
-      setProgress({ stage: 'success', fileName, added, skipped })
-      closeTimer.current = setTimeout(() => setProgress(null), SUCCESS_CLOSE_MS)
-      return true
-    } catch (error) {
-      setProgress({ stage: 'error', fileName, error })
-      return false
-    }
-  }
-
-  /** Upload → server checks fields and rows → duplicate check → save. Returns true when the file was accepted. */
-  const handleUpload = async (file) => {
-    const fileName = file.name
-    setProgress({ stage: 'uploading', fileName })
-
-    let markUploaded
-    const uploaded = new Promise((resolve) => {
-      markUploaded = resolve
-    })
-    const response = uploadResults(file, token, { onUploaded: markUploaded }).then(
-      (data) => ({ data }),
-      (error) => ({ error }),
-    )
-
-    await Promise.all([Promise.race([uploaded, response]), wait(MIN_STAGE_MS)])
-    setProgress({ stage: 'checking', fileName })
-    const [outcome] = await Promise.all([response, wait(MIN_STAGE_MS)])
-
-    if (outcome.error) {
-      if (outcome.error.code === 'UNAUTHORIZED') {
-        setProgress(null)
-        logout({ revoke: false })
-        navigate('/admin', { replace: true, state: { reason: 'expired' } })
-        return false
-      }
-      setProgress({ stage: 'error', fileName, error: outcome.error })
-      return false
-    }
-
-    const { duplicates, fresh } = findDuplicates(outcome.data)
-    if (duplicates.length) {
-      pendingRef.current = { all: outcome.data, fresh, skipped: duplicates.length, fileName }
-      setProgress({ stage: 'duplicates', fileName, duplicates: duplicates.length, total: outcome.data.length })
-      return true
-    }
-    return save(outcome.data, 0, fileName)
-  }
-
-  const resolveDuplicates = (skip) => {
-    const pending = pendingRef.current
-    pendingRef.current = null
-    if (!pending) return
-    save(skip ? pending.fresh : pending.all, skip ? pending.skipped : 0, pending.fileName)
-  }
-
   const addManual = async (record) => {
-    if (findDuplicates([record]).duplicates.length) throw Object.assign(new Error('Duplicate'), { code: 'DUPLICATE_RECORD' })
-    addResults([record])
+    const check = checkCandidate(record)
+    if (check.duplicate) throw codeError('DUPLICATE_RECORD')
+    if (check.conflict) {
+      // Never overwrite: the admin decides; "Keep existing" is the default.
+      const addSeparate = await new Promise((resolve) => setConflict({ record, existing: check.conflict, resolve }))
+      setConflict(null)
+      if (!addSeparate) return false
+    }
+    const { reopened } = addCandidates([record])
     notify(t('admin.manual.added'))
+    if (reopened.length) notify(t('admin.results.autoReopened', { wards: reopened.join(', ') }), 'warning')
+    return true
   }
 
   return (
     <>
       <AdminPageHeader title={t('admin.upload.title')} description={t('admin.upload.description')} />
-
       <div className="space-y-6">
-        <Card>
+        <Card as="section" id="upload" aria-labelledby="upload-title" className="scroll-mt-20">
           <CardHeader
-            title={t('admin.upload.sectionTitle')}
-            description={
-              <>
-                {t('admin.upload.requiredColumns')}{' '}
-                {['Name', 'Ward No.', 'Total Votes'].map((column) => (
-                  <code key={column} className="mx-0.5 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-navy-900">
-                    {column}
-                  </code>
-                ))}
-              </>
-            }
+            title={<span id="upload-title">{t('admin.results.uploadTitle')}</span>}
+            description={<ColumnList required={['Name', 'Party', 'Ward No.', 'Total Votes']} optional={['Candidate ID']} />}
           />
           <div className="p-5">
-            <ExcelUploader onUpload={handleUpload} busy={progress?.stage === 'uploading' || progress?.stage === 'checking'} />
+            <CandidateUploadSection />
           </div>
         </Card>
 
-        <div className="flex items-center gap-3 text-sm font-semibold text-slate-500" id="manual">
-          <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
-          {t('admin.upload.orManual')}
-          <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
-        </div>
-
-        <Card>
-          <CardHeader title={t('admin.manual.title')} description={t('admin.manual.description')} />
-          <div className="p-5">
-            <ManualResultForm onSubmit={addManual} />
-          </div>
-        </Card>
+        {wardMaster.length > 0 && (
+          <Card as="section" id="manual" aria-labelledby="manual-title" className="scroll-mt-20">
+            <CardHeader title={<span id="manual-title">{t('admin.manual.title')}</span>} description={t('admin.manual.description')} />
+            <div className="p-5">
+              <ManualResultForm onSubmit={addManual} />
+            </div>
+          </Card>
+        )}
       </div>
 
-      <UploadProgressModal
-        state={progress}
-        onClose={closeProgress}
-        onSkipDuplicates={() => resolveDuplicates(true)}
-        onImportAnyway={() => resolveDuplicates(false)}
-      />
+      <Modal
+        open={Boolean(conflict)}
+        onClose={() => conflict?.resolve(false)}
+        title={t('admin.results.conflictTitle')}
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => conflict.resolve(true)}>
+              {t('admin.results.addSeparate')}
+            </Button>
+            <Button onClick={() => conflict.resolve(false)}>{t('admin.results.keepExisting')}</Button>
+          </>
+        }
+      >
+        {conflict && (
+          <>
+            <ConflictList
+              items={[
+                {
+                  key: 'admin.results.conflictManual',
+                  vars: { name: conflict.existing.name, ward: conflict.record.wardNo, existing: conflict.existing.totalVotes, incoming: conflict.record.totalVotes },
+                },
+              ]}
+            />
+            <p className="mt-2 text-xs text-slate-500">{t('admin.results.conflictHint')}</p>
+          </>
+        )}
+      </Modal>
     </>
   )
 }

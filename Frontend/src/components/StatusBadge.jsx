@@ -1,10 +1,11 @@
-import { CheckCircle2, Scale } from 'lucide-react'
+import { CheckCircle2, Clock, Scale } from 'lucide-react'
 import Badge from './ui/Badge'
 import { useLanguage } from '../i18n/I18nContext'
 
 // Each status pairs a colour with an icon and a text label, so meaning never relies on colour alone.
 const STATUS_STYLES = {
   Declared: { tone: 'green', icon: CheckCircle2 },
+  Pending: { tone: 'blue', icon: Clock },
   Tie: { tone: 'amber', icon: Scale },
 }
 
@@ -18,5 +19,7 @@ export default function StatusBadge({ status, className }) {
   )
 }
 
-/** Status of a ward computed from its candidates. */
-export const wardStatus = (ward) => (ward.isTie ? 'Tie' : 'Declared')
+const LABELS = { declared: 'Declared', pending: 'Pending', tie: 'Tie' }
+
+/** Badge status for a ward computed by lib/wards.js. */
+export const wardStatus = (ward) => LABELS[ward.status]

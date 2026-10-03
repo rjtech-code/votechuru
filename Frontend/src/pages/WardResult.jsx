@@ -1,13 +1,13 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { CheckCircle2, ChevronLeft, ChevronRight, ListChecks, Scale } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Clock, ListChecks, Scale } from 'lucide-react'
 import PageHeader, { PageBody } from '../components/ui/PageHeader'
 import { Card, CardHeader } from '../components/ui/Card'
 import Button from '../components/ui/Button'
-import Badge from '../components/ui/Badge'
-import Table from '../components/ui/Table'
 import { Field, Select } from '../components/ui/Form'
 import { EmptyState } from '../components/ui/States'
 import StatusBadge, { wardStatus } from '../components/StatusBadge'
+import CandidateRow from '../components/CandidateRow'
+import { useCandidateProfile } from '../context/CandidateProfileContext'
 import NotFound from './NotFound'
 import { useLanguage } from '../i18n/I18nContext'
 import { useResults } from '../context/ResultsContext'
@@ -16,14 +16,16 @@ import { cn } from '../lib/format'
 
 function WinnerPanel({ ward }) {
   const { t, formatNumber, formatPercent } = useLanguage()
+  const { openProfile } = useCandidateProfile()
   if (!ward.winner) {
+    const tie = ward.status === 'tie'
     return (
-      <Card className="h-full border-l-4 border-l-amber-500 p-5">
-        <p className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
-          <Scale className="h-4 w-4" aria-hidden="true" />
-          {t('status.Tie')}
+      <Card className={cn('h-full border-l-4 p-5', tie ? 'border-l-amber-500' : 'border-l-brand-500')}>
+        <p className={cn('flex items-center gap-1.5 text-xs font-bold', tie ? 'text-amber-800' : 'text-brand-800')}>
+          {tie ? <Scale className="h-4 w-4" aria-hidden="true" /> : <Clock className="h-4 w-4" aria-hidden="true" />}
+          {tie ? t('status.Tie') : t('result.pendingTitle')}
         </p>
-        <p className="mt-2 text-sm text-slate-700">{t('result.tieNote')}</p>
+        <p className="mt-2 text-sm text-slate-700">{tie ? t('result.tieNote') : ward.rows.length ? t('result.pendingNote') : t('result.noCandidates')}</p>
       </Card>
     )
   }
@@ -33,7 +35,10 @@ function WinnerPanel({ ward }) {
         <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
         {t('result.winner')}
       </p>
-      <p className="mt-2 text-xl font-bold text-navy-900">{ward.winner.name}</p>
+      <button type="button" onClick={() => openProfile(ward.winner.id)} className="mt-2 text-left text-xl font-bold text-navy-900 hover:text-brand-700 hover:underline">
+        {ward.winner.name}
+      </button>
+      <p className="text-sm text-slate-600">{ward.winner.party}</p>
       <p className="mt-3 text-sm text-slate-700">
         <span className="text-lg font-bold tabular-nums text-navy-900">{formatNumber(ward.winner.totalVotes)}</span>{' '}
         {t('result.votesUnit')} · {formatPercent(ward.winner.percent)}
@@ -48,9 +53,10 @@ function Summary({ ward }) {
     [t('result.totalVotes'), formatNumber(ward.totalVotes)],
     [t('result.candidates'), formatNumber(ward.rows.length)],
     [t('result.margin'), ward.margin != null ? formatNumber(ward.margin) : '—'],
-  ]
+    ward.totalVoters != null && [t('result.totalVoters'), formatNumber(ward.totalVoters)],
+  ].filter(Boolean)
   return (
-    <Card className="grid h-full grid-cols-3 divide-x divide-slate-100">
+    <Card className={cn('grid h-full divide-x divide-slate-100', items.length > 3 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3')}>
       {items.map(([label, value]) => (
         <div key={label} className="p-4 sm:p-5">
           <p className="text-xs text-slate-500">{label}</p>
@@ -61,64 +67,20 @@ function Summary({ ward }) {
   )
 }
 
-function CandidateTable({ ward }) {
-  const { t, formatNumber, formatPercent } = useLanguage()
-  const isWinner = (r) => ward.winner?.id === r.id
-  const winnerBadge = <Badge tone="green" icon={CheckCircle2}>{t('result.winner')}</Badge>
-
-  const columns = [
-    { key: 'position', header: t('result.position'), className: 'w-20 tabular-nums', render: (r) => r.position },
-    {
-      key: 'name',
-      header: t('result.candidate'),
-      render: (r) => (
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="font-semibold text-navy-900">{r.name}</span>
-          {isWinner(r) && winnerBadge}
-        </span>
-      ),
-    },
-    { key: 'votes', header: t('result.totalVotes'), align: 'right', className: 'tabular-nums', render: (r) => formatNumber(r.totalVotes) },
-    {
-      key: 'percent',
-      header: t('result.percent'),
-      className: 'w-48',
-      render: (r) => (
-        <div className="flex items-center gap-3">
-          <span className="w-12 text-right tabular-nums">{formatPercent(r.percent)}</span>
-          {/* The same neutral bar colour for every candidate. */}
-          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
-            <span className="block h-full rounded-full bg-slate-400" style={{ width: `${r.percent}%` }} />
-          </span>
-        </div>
-      ),
-    },
-  ]
-
-  const mobileCard = (r) => (
-    <div className={cn('flex items-start gap-3 px-4 py-3.5', isWinner(r) && 'bg-emerald-50/50')}>
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold tabular-nums text-slate-700">{r.position}</span>
-      <p className="flex min-w-0 flex-1 flex-wrap items-center gap-2 font-semibold text-navy-900">
-        {r.name}
-        {isWinner(r) && winnerBadge}
-      </p>
-      <div className="text-right">
-        <p className="font-semibold tabular-nums text-navy-900">{formatNumber(r.totalVotes)}</p>
-        <p className="text-xs tabular-nums text-slate-500">{formatPercent(r.percent)}</p>
-      </div>
-    </div>
-  )
-
+function CandidateList({ ward }) {
+  const { t } = useLanguage()
   return (
     <Card className="overflow-hidden">
       <CardHeader title={t('pages.ward.tableTitle')} description={t('pages.ward.tableDescription')} />
-      <Table
-        columns={columns}
-        rows={ward.rows}
-        caption={t('pages.ward.tableCaption')}
-        rowClassName={(r) => isWinner(r) && 'bg-emerald-50/50 hover:bg-emerald-50/70'}
-        renderMobileCard={mobileCard}
-      />
+      {ward.rows.length ? (
+        <ul className="divide-y divide-slate-100" aria-label={t('pages.ward.tableCaption')}>
+          {ward.rows.map((row) => (
+            <CandidateRow key={row.id} row={row} isWinner={ward.winner?.id === row.id} />
+          ))}
+        </ul>
+      ) : (
+        <p className="px-5 py-4 text-sm text-slate-500">{t('result.noCandidates')}</p>
+      )}
     </Card>
   )
 }
@@ -141,6 +103,7 @@ export default function WardResult() {
       <PageHeader
         breadcrumbs={[{ label: t('nav.home'), to: '/' }, { label: t('nav.results'), to: '/results' }, { label: title }]}
         title={title}
+        description={ward ? [ward.wardName, ward.areas].filter(Boolean).join(' · ') || undefined : undefined}
         meta={ward && <StatusBadge status={wardStatus(ward)} />}
       />
       <PageBody>
@@ -190,7 +153,7 @@ export default function WardResult() {
                 <Summary ward={ward} />
               </div>
             </div>
-            <CandidateTable ward={ward} />
+            <CandidateList ward={ward} />
           </>
         )}
       </PageBody>

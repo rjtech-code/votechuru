@@ -2,7 +2,7 @@ import path from 'node:path'
 import { Router } from 'express'
 import multer from 'multer'
 import { requireAdmin } from '../middleware/authMiddleware.js'
-import { uploadResults } from '../controllers/uploadController.js'
+import { uploadResults, uploadWards } from '../controllers/uploadController.js'
 import { config } from '../config.js'
 
 const EXCEL_MIME_TYPES = new Set([
@@ -16,7 +16,7 @@ class FileTypeError extends Error {}
 // Files are kept in memory only long enough to parse them; nothing is written to disk.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: config.upload.maxFileBytes, files: 1 },
+  limits: { fileSize: config.upload.maxFileBytes, files: 1, fields: 5, fieldSize: 200 * 1024 },
   fileFilter: (req, file, callback) => {
     const extension = path.extname(file.originalname).toLowerCase()
     if (!config.upload.allowedExtensions.includes(extension) || !EXCEL_MIME_TYPES.has(file.mimetype)) {
@@ -41,5 +41,6 @@ function receiveFile(req, res, next) {
 
 const router = Router()
 router.post('/upload-results', requireAdmin, receiveFile, uploadResults)
+router.post('/upload-wards', requireAdmin, receiveFile, uploadWards)
 
 export default router

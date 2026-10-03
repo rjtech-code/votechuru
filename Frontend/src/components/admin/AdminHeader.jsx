@@ -12,9 +12,6 @@ export default function AdminHeader({ user, onOpenSidebar, sidebarOpen }) {
       <Button variant="ghost" size="icon" className="lg:hidden" onClick={onOpenSidebar} aria-label={t('admin.openNav')} aria-controls="admin-sidebar" aria-expanded={sidebarOpen}>
         <Menu className="h-5 w-5" aria-hidden="true" />
       </Button>
-      <span className="hidden rounded-md bg-[#fff6dc] px-2 py-1 text-xs font-semibold text-[#8a5300] ring-1 ring-inset ring-[#f4d77e] xl:inline">
-        {t('admin.prototypeNote')}
-      </span>
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
         <LanguageSwitcher />
         <Button to="/" variant="ghost" size="sm" icon={ExternalLink} className="hidden sm:inline-flex">

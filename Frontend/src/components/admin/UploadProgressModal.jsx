@@ -1,52 +1,60 @@
 import { useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertTriangle, CheckCircle2, Copy, Loader2, XCircle } from 'lucide-react'
+import { CheckCircle2, Loader2, Scale, XCircle } from 'lucide-react'
 import Button from '../ui/Button'
+import ConflictList from './ConflictList'
 import { useLanguage } from '../../i18n/I18nContext'
 import { cn } from '../../lib/format'
 
-const MAX_ROW_ERRORS = 5
-const STEP = { uploading: 1, checking: 2, success: 3 }
+const STEP = { uploading: 1, checking: 2, validating: 3, success: 4 }
+const TOTAL_STEPS = 4
+const ROW_FIELD_CODES = ['REQUIRED', 'TOO_LONG', 'NUMBER_INVALID']
 
-/** Translates an upload ApiError into a headline plus optional detail lines. */
-function describeError(error, t) {
+/** Turns an upload ApiError into { messageKey, vars, items } translation descriptors. */
+function describeError(error) {
   const code = error?.code
   const details = error?.details ?? {}
   if (code === 'MISSING_FIELDS') {
     return {
-      message: t('admin.progress.errors.MISSING_FIELDS'),
-      lines: details.missingFields?.length ? [t('admin.progress.errors.missingList', { fields: details.missingFields.join(', ') })] : [],
+      message: { key: 'admin.progress.errors.MISSING_FIELDS', vars: { fields: (details.requiredFields ?? []).join(', ') } },
+      items: details.missingFields?.length ? [{ key: 'admin.progress.errors.missingList', vars: { fields: details.missingFields.join(', ') } }] : [],
     }
   }
   if (code === 'INVALID_ROWS') {
-    const rows = details.errors ?? []
-    const lines = rows
-      .slice(0, MAX_ROW_ERRORS)
-      .map((e) => t('admin.progress.row', { row: e.row, message: t(`admin.progress.rowCodes.${e.code}`) }))
-    const remaining = (details.errorCount ?? rows.length) - lines.length
-    if (remaining > 0) lines.push(t('admin.progress.moreErrors', { count: remaining }))
-    return { message: t('admin.progress.errors.INVALID_ROWS'), lines }
+    const items = (details.errors ?? []).map((e) => ({
+      key: 'admin.progress.row',
+      vars: { row: e.row },
+      inner: { key: `admin.progress.rowCodes.${e.code}`, vars: ROW_FIELD_CODES.includes(e.code) ? { field: e.field } : { ward: e.wardNo, firstRow: e.firstRow } },
+    }))
+    return { message: { key: 'admin.progress.errors.INVALID_ROWS' }, items, total: details.errorCount ?? items.length }
   }
   const key = ['NO_ROWS', 'EMPTY_SHEET', 'TOO_MANY_ROWS', 'INVALID_FILE_TYPE', 'FILE_TOO_LARGE', 'PARSE_ERROR', 'NO_FILE', 'UPLOAD_ERROR'].includes(code)
     ? `admin.progress.errors.${code}`
-    : ['UNAUTHORIZED', 'NETWORK_ERROR', 'STORAGE_FULL'].includes(code)
+    : ['UNAUTHORIZED', 'NETWORK_ERROR', 'STORAGE_FULL', 'WARD_NOT_FOUND'].includes(code)
       ? `errors.${code}`
       : 'errors.generic'
-  return { message: t(key), lines: [] }
+  return { message: { key }, items: [] }
 }
 
 /**
- * Small centred popup that follows an Excel upload:
- * uploading → checking → success, or error / duplicate-choice states.
- * state: { stage, fileName, error?, duplicates?, total?, added?, skipped? }
+ * Small centred popup that follows a spreadsheet upload:
+ *   uploading → checking → validating → success, or error / conflict-decision states.
+ * state: {
+ *   stage, fileName, validatingKey,
+ *   lines?: [{ key, vars, tone }]           summary on success
+ *   rejected?: [{ key, vars }]              rows not imported (shown on success)
+ *   conflicts?: [{ key, vars }], conflictTitleKey, alternativeKey
+ *   error?
+ * }
  */
-export default function UploadProgressModal({ state, onClose, onSkipDuplicates, onImportAnyway }) {
+export default function UploadProgressModal({ state, onClose, onKeepExisting, onAlternative }) {
   const { t, formatNumber } = useLanguage()
   const titleId = useId()
   const panelRef = useRef(null)
   const stage = state?.stage
-  const busy = stage === 'uploading' || stage === 'checking'
-  const closable = stage === 'error' || stage === 'duplicates' || stage === 'success'
+  const busy = stage in { uploading: 1, checking: 1, validating: 1 }
+  const needsClose = stage === 'error' || (stage === 'success' && state.rejected?.length > 0)
+  const closable = stage === 'error' || stage === 'conflicts' || stage === 'success'
 
   useEffect(() => {
     if (!stage) return undefined
@@ -60,24 +68,28 @@ export default function UploadProgressModal({ state, onClose, onSkipDuplicates, 
 
   if (!stage) return null
 
-  const error = stage === 'error' ? describeError(state.error, t) : null
+  const error = stage === 'error' ? describeError(state.error) : null
   const title = {
     uploading: t('admin.progress.uploading'),
     checking: t('admin.progress.checking'),
+    validating: t(state.validatingKey ?? 'admin.progress.validatingCandidates'),
     success: t('admin.progress.success'),
     error: t('admin.progress.failed'),
-    duplicates: t('admin.progress.duplicatesTitle'),
+    conflicts: t(state.conflictTitleKey ?? 'admin.results.conflictTitle'),
   }[stage]
 
-  const icon = {
-    uploading: <Loader2 className="h-7 w-7 animate-spin text-brand-600" />,
-    checking: <Loader2 className="h-7 w-7 animate-spin text-brand-600" />,
-    success: <CheckCircle2 className="h-7 w-7 text-emerald-600" />,
-    error: <XCircle className="h-7 w-7 text-red-600" />,
-    duplicates: <Copy className="h-7 w-7 text-amber-600" />,
-  }[stage]
-
-  const iconBg = { success: 'bg-emerald-50', error: 'bg-red-50', duplicates: 'bg-amber-50' }[stage] ?? 'bg-brand-50'
+  const icon =
+    stage === 'success' ? (
+      <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+    ) : stage === 'error' ? (
+      <XCircle className="h-7 w-7 text-red-600" />
+    ) : stage === 'conflicts' ? (
+      <Scale className="h-7 w-7 text-amber-600" />
+    ) : (
+      <Loader2 className="h-7 w-7 animate-spin text-brand-600" />
+    )
+  const iconBg = { success: 'bg-emerald-50', error: 'bg-red-50', conflicts: 'bg-amber-50' }[stage] ?? 'bg-brand-50'
+  const tr = (d) => t(d.key, Object.fromEntries(Object.entries(d.vars ?? {}).map(([k, v]) => [k, typeof v === 'number' && k !== 'ward' ? formatNumber(v) : v])))
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -99,55 +111,65 @@ export default function UploadProgressModal({ state, onClose, onSkipDuplicates, 
         {state.fileName && <p className="mt-1 truncate text-xs text-slate-500">{state.fileName}</p>}
 
         {STEP[stage] && (
-          <div className="mt-4 flex items-center justify-center gap-1.5" aria-label={t('admin.progress.step', { n: STEP[stage] })}>
-            {[1, 2, 3].map((n) => (
-              <span key={n} className={cn('h-1.5 w-8 rounded-full transition-colors', n <= STEP[stage] ? 'bg-brand-600' : 'bg-slate-200')} />
+          <div className="mt-4 flex items-center justify-center gap-1.5" aria-label={t('admin.progress.step', { n: STEP[stage], total: TOTAL_STEPS })}>
+            {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((n) => (
+              <span key={n} className={cn('h-1.5 w-7 rounded-full transition-colors', n <= STEP[stage] ? 'bg-brand-600' : 'bg-slate-200')} />
             ))}
           </div>
         )}
 
         {stage === 'success' && (
-          <p className="mt-3 text-sm text-slate-600">
-            {t('admin.progress.added', { count: formatNumber(state.added) })}
-            {state.skipped > 0 && <> {t('admin.progress.skipped', { count: formatNumber(state.skipped) })}</>}
-          </p>
+          <div className="mt-3 space-y-1 text-sm text-slate-600">
+            {state.lines?.map((line) => (
+              <p key={line.key} className={line.tone === 'warning' ? 'text-amber-800' : undefined}>
+                {tr(line)}
+              </p>
+            ))}
+            {state.rejected?.length > 0 && (
+              <div className="pt-2">
+                <ConflictList items={state.rejected} tone="red" />
+              </div>
+            )}
+          </div>
         )}
 
         {stage === 'error' && (
           <div className="mt-3 text-left">
-            <p className="text-sm text-slate-700">{error.message}</p>
-            {error.lines.length > 0 && (
-              <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-800">
-                {error.lines.map((line) => (
-                  <li key={line} className="flex gap-1.5">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                    {line}
-                  </li>
-                ))}
-              </ul>
+            <p className="text-sm text-slate-700">{tr(error.message)}</p>
+            {error.items.length > 0 && (
+              <div className="mt-2">
+                <ConflictList
+                  tone="red"
+                  items={error.items.map((item) => ({ key: item.key, vars: { ...item.vars, message: item.inner ? tr(item.inner) : '' } }))}
+                />
+              </div>
             )}
             <p className="mt-2 text-xs text-slate-500">{t('admin.progress.nothingSaved')}</p>
-            <Button variant="secondary" className="mt-5 w-full" onClick={onClose}>
-              {t('common.close')}
-            </Button>
           </div>
         )}
 
-        {stage === 'duplicates' && (
+        {stage === 'conflicts' && (
           <>
-            <p className="mt-2 text-sm text-slate-600">
-              {t('admin.progress.duplicatesText', { count: formatNumber(state.duplicates), total: formatNumber(state.total) })}
-            </p>
+            <div className="mt-3">
+              <ConflictList items={state.conflicts} />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">{t('admin.results.conflictHint')}</p>
             <div className="mt-5 flex flex-col gap-2">
-              <Button onClick={onSkipDuplicates}>{t('admin.progress.skipDuplicates')}</Button>
-              <Button variant="secondary" onClick={onImportAnyway}>
-                {t('admin.progress.importAnyway')}
+              <Button onClick={onKeepExisting}>{t('admin.results.keepExisting')}</Button>
+              <Button variant="secondary" onClick={onAlternative}>
+                {t(state.alternativeKey ?? 'admin.results.addSeparate')}
               </Button>
               <Button variant="ghost" onClick={onClose}>
                 {t('common.cancel')}
               </Button>
             </div>
           </>
+        )}
+
+        {needsClose && (
+          <Button variant="secondary" className="mt-5 w-full" onClick={onClose}>
+            {t('common.close')}
+          </Button>
         )}
       </div>
     </div>,

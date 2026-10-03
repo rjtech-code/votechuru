@@ -1,18 +1,21 @@
-import { CheckCircle2, Info, Landmark, ListChecks, Users, Vote } from 'lucide-react'
+import { CheckCircle2, Landmark, ListChecks, Users, Vote } from 'lucide-react'
 import Hero from '../components/Hero'
 import ElectionTypeCard from '../components/ElectionTypeCard'
 import StatCard from '../components/StatCard'
 import SectionHeader from '../components/SectionHeader'
 import ResultCard from '../components/ResultCard'
+import EventCountdown from '../components/EventCountdown'
 import { EmptyState } from '../components/ui/States'
 import { useLanguage } from '../i18n/I18nContext'
 import { useResults } from '../context/ResultsContext'
-import { recentWards } from '../lib/wards'
+
+const RECENT_LIMIT = 6
 
 export default function Home() {
   const { t } = useLanguage()
   const { stats, wards } = useResults()
-  const recent = recentWards(wards, 6)
+  // Declared wards only, in ascending ward order (wards are already sorted numerically).
+  const declared = wards.filter((w) => w.status === 'declared')
 
   return (
     <>
@@ -24,6 +27,8 @@ export default function Home() {
           <ElectionTypeCard to="/results" icon={Landmark} tone="saffron" title={t('home.wardCard.title')} subtitle={t('home.wardCard.subtitle')} />
         </div>
 
+        <EventCountdown className="mt-8" />
+
         <section aria-label={t('home.statsLabel')} className="mt-8 grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4 lg:gap-[13px]">
           <StatCard icon={ListChecks} tone="navy" value={stats.wards} label={t('stats.wards')} />
           <StatCard icon={Users} tone="blue" value={stats.candidates} label={t('stats.candidates')} />
@@ -32,10 +37,10 @@ export default function Home() {
         </section>
 
         <section aria-labelledby="recent-results" className="mt-10">
-          <SectionHeader id="recent-results" title={t('home.recentResults')} linkTo={recent.length ? '/results' : undefined} />
-          {recent.length ? (
+          <SectionHeader id="recent-results" title={t('home.recentResults')} linkTo={declared.length ? '/results' : undefined} />
+          {declared.length ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {recent.map((ward) => (
+              {declared.slice(0, RECENT_LIMIT).map((ward) => (
                 <ResultCard key={ward.wardNo} ward={ward} />
               ))}
             </div>
@@ -48,11 +53,6 @@ export default function Home() {
             />
           )}
         </section>
-
-        <p className="mt-10 flex items-start gap-2 rounded-lg border border-[#f4d77e] bg-[#fffbeb] px-4 py-3 text-[13.5px] text-[#7a4a06]">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          {t('home.prototypeNote')}
-        </p>
       </div>
     </>
   )

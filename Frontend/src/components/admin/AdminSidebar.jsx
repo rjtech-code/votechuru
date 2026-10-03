@@ -1,5 +1,5 @@
 import { Link, NavLink } from 'react-router-dom'
-import { BarChart3, LayoutDashboard, LogOut, Settings, Upload, X } from 'lucide-react'
+import { BarChart3, LayoutDashboard, LogOut, MapPin, Settings, Upload, X } from 'lucide-react'
 import { LogoTile } from '../BrandMark'
 import { useLanguage } from '../../i18n/I18nContext'
 import { cn } from '../../lib/format'
@@ -8,6 +8,7 @@ export const adminNav = [
   { to: '/admin/dashboard', labelKey: 'admin.nav.dashboard', icon: LayoutDashboard },
   { to: '/admin/results', labelKey: 'admin.nav.results', icon: BarChart3 },
   { to: '/admin/upload', labelKey: 'admin.nav.upload', icon: Upload },
+  { to: '/admin/wards', labelKey: 'admin.nav.wards', icon: MapPin },
   { to: '/admin/settings', labelKey: 'admin.nav.settings', icon: Settings },
 ]
 

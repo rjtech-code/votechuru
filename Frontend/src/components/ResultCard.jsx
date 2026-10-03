@@ -27,6 +27,7 @@ export default function ResultCard({ ward, variant = 'card' }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[17px] font-bold leading-snug text-navy-900">{t('common.ward', { ward: ward.wardNo })}</p>
+          {ward.wardName && <p className="truncate text-[13px] text-slate-600">{ward.wardName}</p>}
           <p className="mt-0.5 flex items-center gap-1 text-[13px] text-slate-500">
             <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             {t('result.candidatesCount', { count: formatNumber(ward.rows.length) })}
@@ -39,7 +40,9 @@ export default function ResultCard({ ward, variant = 'card' }) {
         <dl className={cn('mt-4 grid grid-cols-3 gap-3 text-sm', isCard && 'border-t border-slate-100 pt-4')}>
           <div className="col-span-3">
             <dt className="text-xs text-slate-500">{t('result.winner')}</dt>
-            <dd className="mt-0.5 font-semibold text-slate-900">{winner.name}</dd>
+            <dd className="mt-0.5 font-semibold text-slate-900">
+              {winner.name} <span className="font-normal text-slate-500">· {winner.party}</span>
+            </dd>
           </div>
           <div>
             <dt className="text-xs text-slate-500">{t('result.votes')}</dt>
@@ -53,7 +56,9 @@ export default function ResultCard({ ward, variant = 'card' }) {
           </div>
         </dl>
       ) : (
-        <p className="mt-4 text-sm text-slate-500">{t('result.tieNote')}</p>
+        <p className="mt-4 text-sm text-slate-500">
+          {ward.status === 'tie' ? t('result.tieNote') : ward.rows.length ? t('result.pendingNote') : t('result.noCandidates')}
+        </p>
       )}
 
       {isCard && (

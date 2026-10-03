@@ -73,7 +73,7 @@ export default function Navbar() {
             type="button"
             onClick={() => setSearchOpen(true)}
             aria-label={t('nav.searchPortal')}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[14px] text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700 xl:w-[76px]"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[14px] text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700 xl:min-w-[76px]"
           >
             <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="hidden xl:inline">{t('nav.search')}</span>

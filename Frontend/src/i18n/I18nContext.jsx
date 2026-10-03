@@ -79,7 +79,12 @@ export function LanguageProvider({ children }) {
         ? new Date(input).toLocaleString(locale, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
         : '—'
 
-    return { language, setLanguage, t, tx, loc, formatNumber, formatPercent, formatDate, formatDateTime }
+    const toDate = (input) => (/^\d{4}-\d{2}-\d{2}$/.test(input) ? new Date(`${input}T00:00:00`) : new Date(input))
+    /** Day of the week, always computed from the date (never entered by hand). */
+    const formatWeekday = (input) => (input ? toDate(input).toLocaleDateString(locale, { weekday: 'long' }) : '')
+    const formatTime = (input) => (input ? new Date(input).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' }) : '')
+
+    return { language, setLanguage, t, tx, loc, formatNumber, formatPercent, formatDate, formatDateTime, formatWeekday, formatTime }
   }, [language, setLanguage])
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>

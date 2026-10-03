@@ -3,17 +3,18 @@ import { ChevronRight, MapPin, Users } from 'lucide-react'
 import StatusBadge, { wardStatus } from './StatusBadge'
 import { EmptyState } from './ui/States'
 import { useLanguage } from '../i18n/I18nContext'
-import { allCandidateRows, parseWardQuery } from '../lib/wards'
+import { allCandidateRows, matchesCandidate, parseWardQuery } from '../lib/wards'
+import { useCandidateProfile } from '../context/CandidateProfileContext'
 import { wardPath } from '../lib/paths'
 
 const LIMIT = 8
 
-/** Matches wards (by number) and candidates (by name) for a search query. */
+/** Matches wards (by number) and candidates (by name or party) for a search query. */
 export function searchWards(wards, query) {
   const q = query.trim().toLowerCase()
   const wardNo = parseWardQuery(q)
   const matchedWards = wardNo != null ? wards.filter((w) => String(w.wardNo).startsWith(String(wardNo))) : []
-  const candidates = allCandidateRows(wards).filter((c) => c.name.toLowerCase().includes(q))
+  const candidates = allCandidateRows(wards).filter((c) => matchesCandidate(c, q))
   return { wards: matchedWards, candidates }
 }
 
@@ -31,23 +32,38 @@ function Group({ title, icon: Icon, total, children }) {
   )
 }
 
-function Item({ to, title, subtitle, badge, onNavigate }) {
+const itemClass = 'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50'
+
+/** A result row that either links to a page (`to`) or runs an action (`onClick`). */
+function Item({ to, onClick, title, subtitle, badge, onNavigate }) {
+  const body = (
+    <>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-slate-900">{title}</p>
+        {subtitle && <p className="truncate text-xs text-slate-500">{subtitle}</p>}
+      </div>
+      {badge}
+      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+    </>
+  )
   return (
     <li>
-      <Link to={to} onClick={onNavigate} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-900">{title}</p>
-          {subtitle && <p className="truncate text-xs text-slate-500">{subtitle}</p>}
-        </div>
-        {badge}
-        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
-      </Link>
+      {to ? (
+        <Link to={to} onClick={onNavigate} className={itemClass}>
+          {body}
+        </Link>
+      ) : (
+        <button type="button" onClick={onClick} className={itemClass}>
+          {body}
+        </button>
+      )}
     </li>
   )
 }
 
 export default function SearchResults({ results, onNavigate }) {
-  const { t, formatNumber } = useLanguage()
+  const { t, tx, formatNumber } = useLanguage()
+  const { openProfile } = useCandidateProfile()
   if (!results.wards.length && !results.candidates.length) return <EmptyState description={t('search.noResultsDescription')} />
 
   return (
@@ -59,7 +75,7 @@ export default function SearchResults({ results, onNavigate }) {
               key={w.wardNo}
               to={wardPath(w.wardNo)}
               title={t('common.ward', { ward: w.wardNo })}
-              subtitle={w.winner ? t('search.winnerLine', { name: w.winner.name }) : t('result.tieNote')}
+              subtitle={w.winner ? t('search.winnerLine', { name: w.winner.name }) : tx('status', wardStatus(w))}
               badge={<StatusBadge status={wardStatus(w)} />}
               onNavigate={onNavigate}
             />
@@ -71,10 +87,12 @@ export default function SearchResults({ results, onNavigate }) {
           {results.candidates.slice(0, LIMIT).map((c) => (
             <Item
               key={c.id}
-              to={wardPath(c.wardNo)}
+              onClick={() => {
+                onNavigate?.()
+                openProfile(c.id)
+              }}
               title={c.name}
-              subtitle={`${t('common.ward', { ward: c.wardNo })} · ${t('result.votesValue', { count: formatNumber(c.totalVotes) })}`}
-              onNavigate={onNavigate}
+              subtitle={`${c.party} · ${t('common.ward', { ward: c.wardNo })} · ${t('result.votesValue', { count: formatNumber(c.totalVotes) })}`}
             />
           ))}
         </Group>

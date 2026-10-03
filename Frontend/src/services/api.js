@@ -50,18 +50,19 @@ export async function logout(token) {
 }
 
 /**
- * POST /api/admin/upload-results (multipart, field "file").
+ * Uploads a spreadsheet (multipart, field "file", plus optional extra form fields).
  * Uses XMLHttpRequest so the UI can tell when the file has finished uploading
  * (`onUploaded`) and the server has moved on to checking fields.
- * Resolves with the validated records: [{ name, wardNo, totalVotes }].
+ * Resolves with the server's JSON body ({ data, rejected? }).
  */
-export function uploadResults(file, token, { onUploaded } = {}) {
+function uploadSheet(path, file, token, { fields = {}, onUploaded } = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const form = new FormData()
+    for (const [key, value] of Object.entries(fields)) form.append(key, value)
     form.append('file', file)
 
-    xhr.open('POST', '/api/admin/upload-results')
+    xhr.open('POST', path)
     xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.responseType = 'json'
     xhr.upload.onload = () => onUploaded?.()
@@ -69,9 +70,16 @@ export function uploadResults(file, token, { onUploaded } = {}) {
     xhr.onload = () => {
       const json = xhr.response
       if (!json || typeof json !== 'object') return reject(new ApiError('NETWORK_ERROR'))
-      if (xhr.status >= 200 && xhr.status < 300 && json.success) return resolve(json.data)
+      if (xhr.status >= 200 && xhr.status < 300 && json.success) return resolve(json)
       reject(new ApiError(json.code || 'generic', json))
     }
     xhr.send(form)
   })
 }
+
+/** POST /api/admin/upload-results — candidate sheet, checked against the Ward Master numbers. */
+export const uploadCandidateSheet = (file, token, { wardNos, onUploaded }) =>
+  uploadSheet('/api/admin/upload-results', file, token, { fields: { wardNos: JSON.stringify(wardNos) }, onUploaded })
+
+/** POST /api/admin/upload-wards — Ward Master sheet. */
+export const uploadWardSheet = (file, token, { onUploaded }) => uploadSheet('/api/admin/upload-wards', file, token, { onUploaded })

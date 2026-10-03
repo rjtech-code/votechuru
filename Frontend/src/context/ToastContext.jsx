@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useState } from 'react'
-import { CheckCircle2, AlertCircle, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, X } from 'lucide-react'
 import { cn } from '../lib/format'
 import { useLanguage } from '../i18n/I18nContext'
 
@@ -15,7 +15,7 @@ export function ToastProvider({ children }) {
     (message, tone = 'success') => {
       const id = Date.now() + Math.random()
       setToasts((list) => [...list, { id, message, tone }])
-      setTimeout(() => dismiss(id), 3500)
+      setTimeout(() => dismiss(id), tone === 'warning' ? 7000 : 3500)
     },
     [dismiss],
   )
@@ -28,7 +28,7 @@ export function ToastProvider({ children }) {
         className="pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex flex-col items-center gap-2 px-4 sm:items-end sm:px-6"
       >
         {toasts.map((toast) => {
-          const Icon = toast.tone === 'error' ? AlertCircle : CheckCircle2
+          const Icon = { error: AlertCircle, warning: AlertTriangle }[toast.tone] ?? CheckCircle2
           return (
             <div
               key={toast.id}
@@ -37,7 +37,7 @@ export function ToastProvider({ children }) {
             >
               <Icon
                 aria-hidden="true"
-                className={cn('mt-0.5 h-5 w-5 shrink-0', toast.tone === 'error' ? 'text-red-600' : 'text-emerald-600')}
+                className={cn('mt-0.5 h-5 w-5 shrink-0', { error: 'text-red-600', warning: 'text-amber-600' }[toast.tone] ?? 'text-emerald-600')}
               />
               <p className="flex-1 text-sm text-slate-700">{toast.message}</p>
               <button

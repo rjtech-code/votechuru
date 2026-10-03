@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Mail } from 'lucide-react'
+import { Info, Mail } from 'lucide-react'
 import { LogoTile, StateEmblem } from './BrandMark'
 import { footerNav, site } from '../config/site'
 import { useLanguage } from '../i18n/I18nContext'
@@ -40,7 +40,7 @@ export default function Footer() {
 
         <div className="md:col-span-4">
           <h2 className="flex items-center gap-2 text-[15px] font-bold">
-            <AlertTriangle className="h-4 w-4 text-[#f5b400]" aria-hidden="true" />
+            <Info className="h-4 w-4 text-[#f5b400]" aria-hidden="true" />
             {t('footer.disclaimerTitle')}
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-white/75">{t('pages.about.disclaimer')}</p>

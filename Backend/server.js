@@ -3,7 +3,8 @@
  *
  *   POST /api/admin/login            { email, password } → { token, user }
  *   POST /api/admin/logout           revokes the session token
- *   POST /api/admin/upload-results   multipart "file" (.xlsx/.xls) → validated records
+ *   POST /api/admin/upload-results   multipart "file" + "wardNos" → validated candidate records
+ *   POST /api/admin/upload-wards     multipart "file" → validated Ward Master rows
  *
  * No database: validated records are returned to the admin panel, which stores them.
  * Run from the Backend folder with `npm run dev` (auto-restart) or `npm start`.

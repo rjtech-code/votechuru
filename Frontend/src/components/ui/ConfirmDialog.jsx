@@ -3,7 +3,7 @@ import Modal from './Modal'
 import Button from './Button'
 import { useLanguage } from '../../i18n/I18nContext'
 
-export default function ConfirmDialog({ open, title, message, confirmLabel, onConfirm, onClose }) {
+export default function ConfirmDialog({ open, title, message, confirmLabel, confirmVariant = 'danger', onConfirm, onClose }) {
   const { t } = useLanguage()
   const [busy, setBusy] = useState(false)
 
@@ -28,13 +28,13 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, onCo
           <Button variant="secondary" onClick={onClose} disabled={busy}>
             {t('common.cancel')}
           </Button>
-          <Button variant="danger" onClick={handleConfirm} loading={busy}>
+          <Button variant={confirmVariant} onClick={handleConfirm} loading={busy}>
             {confirmLabel ?? t('common.delete')}
           </Button>
         </>
       }
     >
-      <p className="text-sm text-slate-600">{message}</p>
+      <div className="text-sm text-slate-600">{message}</div>
     </Modal>
   )
 }

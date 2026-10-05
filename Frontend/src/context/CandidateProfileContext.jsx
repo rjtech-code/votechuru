@@ -43,12 +43,17 @@ function ProfileBody({ candidate, manage }) {
     }
   }
 
+  // Votes, position and share only exist once result data has been uploaded (and, on the
+  // public site, declared); they are never shown as zero before that.
+  const hasResult = candidate.totalVotes != null
   const details = [
-    [t('result.ward'), `${t('common.ward', { ward: ward.wardNo })}${ward.wardName ? ` — ${ward.wardName}` : ''}`],
-    [t('result.totalVotes'), formatNumber(candidate.totalVotes)],
-    [t('result.position'), t('profile.positionOf', { position: candidate.position, total: ward.rows.length })],
-    [t('result.percent'), formatPercent(candidate.percent)],
-    candidate.candidateCode && [t('profile.candidateCode'), candidate.candidateCode],
+    [t('profile.candidateCode'), candidate.candidateId ?? t('admin.candidates.idMissing')],
+    [t('result.party'), candidate.party || '—'],
+    [t('admin.wards.columns.wardNo'), ward.wardNo],
+    [t('result.wardName'), ward.wardName || '—'],
+    hasResult && [t('result.totalVotes'), formatNumber(candidate.totalVotes)],
+    hasResult && [t('result.position'), t('profile.positionOf', { position: candidate.position, total: ward.resultCount })],
+    hasResult && [t('result.percent'), formatPercent(candidate.percent)],
   ].filter(Boolean)
 
   return (

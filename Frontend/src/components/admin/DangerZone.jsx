@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, CalendarX, MapPinOff, Trash2 } from 'lucide-react'
+import { AlertTriangle, CalendarX, MapPinOff, Trash2, UserX } from 'lucide-react'
 import Button from '../ui/Button'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import { useResults } from '../../context/ResultsContext'
@@ -23,12 +23,14 @@ function DangerRow({ title, text, note, button, icon, disabled, onClick }) {
 }
 
 /**
- * Separate, confirmed resets. Resetting results keeps the Ward Master and the schedule;
- * the Ward Master can only be reset once no candidate records depend on it.
+ * Separate, confirmed resets. Resetting results keeps wards, candidates and the schedule;
+ * resetting candidates also removes their results; the Ward Master can only be reset once
+ * no candidate records depend on it.
  */
 export default function DangerZone() {
   const { t, formatNumber, errorText } = useLanguage()
-  const { candidates, wardMaster, resetResults, resetWards } = useResults()
+  const { candidates, wardMaster, resetResults, resetCandidates, resetWards } = useResults()
+  const resultCount = candidates.filter((c) => c.totalVotes != null).length
   const { electionDateTime, resultDeclarationDateTime, clearSchedule } = useSettings()
   const notify = useToast()
   const [confirming, setConfirming] = useState(null) // 'results' | 'wards' | 'schedule'
@@ -47,6 +49,15 @@ export default function DangerZone() {
       run: async () => {
         await resetResults()
         notify(t('admin.danger.done'))
+      },
+    },
+    candidates: {
+      title: t('admin.danger.candidatesConfirmTitle'),
+      message: t('admin.danger.candidatesConfirmText', { count: formatNumber(candidates.length) }),
+      label: t('admin.danger.candidatesButton'),
+      run: async () => {
+        await resetCandidates()
+        notify(t('admin.danger.candidatesDone'))
       },
     },
     wards: {
@@ -83,11 +94,20 @@ export default function DangerZone() {
         <DangerRow
           title={t('admin.danger.resultsTitle')}
           text={t('admin.danger.resultsText')}
-          note={t('admin.danger.stored', { count: formatNumber(candidates.length), wards: formatNumber(wardMaster.length) })}
+          note={t('admin.danger.stored', { count: formatNumber(resultCount), wards: formatNumber(wardMaster.length) })}
           button={t('admin.danger.button')}
           icon={Trash2}
-          disabled={!candidates.length}
+          disabled={!resultCount}
           onClick={() => setConfirming('results')}
+        />
+        <DangerRow
+          title={t('admin.danger.candidatesTitle')}
+          text={t('admin.danger.candidatesText')}
+          note={t('admin.danger.candidatesStored', { count: formatNumber(candidates.length) })}
+          button={t('admin.danger.candidatesButton')}
+          icon={UserX}
+          disabled={!candidates.length}
+          onClick={() => setConfirming('candidates')}
         />
         <DangerRow
           title={t('admin.danger.wardsTitle')}

@@ -7,6 +7,7 @@ import { Field, Select } from '../components/ui/Form'
 import { EmptyState } from '../components/ui/States'
 import StatusBadge, { wardStatus } from '../components/StatusBadge'
 import CandidateRow from '../components/CandidateRow'
+import VotesGiven from '../components/VotesGiven'
 import { useCandidateProfile } from '../context/CandidateProfileContext'
 import NotFound from './NotFound'
 import { useLanguage } from '../i18n/I18nContext'
@@ -25,7 +26,7 @@ function WinnerPanel({ ward }) {
           {tie ? <Scale className="h-4 w-4" aria-hidden="true" /> : <Clock className="h-4 w-4" aria-hidden="true" />}
           {tie ? t('status.Tie') : t('result.pendingTitle')}
         </p>
-        <p className="mt-2 text-sm text-slate-700">{tie ? t('result.tieNote') : ward.rows.length || ward.withheld ? t('result.pendingNote') : t('result.noCandidates')}</p>
+        <p className="mt-2 text-sm text-slate-700">{tie ? t('result.tieNote') : ward.rows.length ? t('result.pendingNote') : t('result.noCandidates')}</p>
       </Card>
     )
   }
@@ -56,13 +57,16 @@ function Summary({ ward }) {
     ward.totalVoters != null && [t('result.totalVoters'), formatNumber(ward.totalVoters)],
   ].filter(Boolean)
   return (
-    <Card className={cn('grid h-full divide-x divide-slate-100', items.length > 3 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3')}>
-      {items.map(([label, value]) => (
-        <div key={label} className="p-4 sm:p-5">
-          <p className="text-xs text-slate-500">{label}</p>
-          <p className="mt-1 text-lg font-bold tabular-nums text-navy-900 sm:text-xl">{value}</p>
-        </div>
-      ))}
+    <Card className="flex h-full flex-col">
+      <div className={cn('grid flex-1 divide-x divide-slate-100', items.length > 3 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3')}>
+        {items.map(([label, value]) => (
+          <div key={label} className="p-4 sm:p-5">
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-navy-900 sm:text-xl">{value}</p>
+          </div>
+        ))}
+      </div>
+      {ward.votesGiven != null && <VotesGiven ward={ward} className="border-t border-slate-100 px-4 py-3 sm:px-5" />}
     </Card>
   )
 }
@@ -71,7 +75,10 @@ function CandidateList({ ward }) {
   const { t } = useLanguage()
   return (
     <Card className="overflow-hidden">
-      <CardHeader title={t('pages.ward.tableTitle')} description={t('pages.ward.tableDescription')} />
+      <CardHeader
+        title={ward.hasResults ? t('pages.ward.tableTitle') : t('pages.ward.candidatesTitle')}
+        description={ward.hasResults ? t('pages.ward.tableDescription') : t('pages.ward.candidatesDescription')}
+      />
       {ward.rows.length ? (
         <ul className="divide-y divide-slate-100" aria-label={t('pages.ward.tableCaption')}>
           {ward.rows.map((row) => (
@@ -79,7 +86,7 @@ function CandidateList({ ward }) {
           ))}
         </ul>
       ) : (
-        <p className="px-5 py-4 text-sm text-slate-500">{t(ward.withheld ? 'result.pendingNote' : 'result.noCandidates')}</p>
+        <p className="px-5 py-4 text-sm text-slate-500">{t('result.noCandidates')}</p>
       )}
     </Card>
   )

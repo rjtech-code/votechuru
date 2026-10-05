@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ChevronRight, Users } from 'lucide-react'
 import StatusBadge, { wardStatus } from './StatusBadge'
+import VotesGiven from './VotesGiven'
 import { useLanguage } from '../i18n/I18nContext'
 import { wardPath } from '../lib/paths'
 import { cn } from '../lib/format'
@@ -35,6 +36,7 @@ export default function ResultCard({ ward, variant = 'card' }) {
         </div>
         <StatusBadge status={wardStatus(ward)} className="shrink-0" />
       </div>
+      <VotesGiven ward={ward} className="mt-2 text-[13px]" />
 
       {winner ? (
         <dl className={cn('mt-4 grid grid-cols-3 gap-3 text-sm', isCard && 'border-t border-slate-100 pt-4')}>
@@ -57,7 +59,7 @@ export default function ResultCard({ ward, variant = 'card' }) {
         </dl>
       ) : (
         <p className="mt-4 text-sm text-slate-500">
-          {ward.status === 'tie' ? t('result.tieNote') : ward.rows.length || ward.withheld ? t('result.pendingNote') : t('result.noCandidates')}
+          {ward.status === 'tie' ? t('result.tieNote') : ward.rows.length ? t('result.pendingNote') : t('result.noCandidates')}
         </p>
       )}
 

@@ -1,15 +1,14 @@
 import { useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCircle2, Loader2, Scale, XCircle } from 'lucide-react'
+import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import Button from '../ui/Button'
 import ConflictList from './ConflictList'
 import { useLanguage } from '../../i18n/I18nContext'
 import { translations } from '../../i18n/translations'
 import { cn } from '../../lib/format'
 
-const STEP = { uploading: 1, checking: 2, validating: 3, success: 4 }
+const STEP = { uploading: 1, checking: 2, validating: 3, saving: 4, success: 4 }
 const TOTAL_STEPS = 4
-const ROW_FIELD_CODES = ['REQUIRED', 'TOO_LONG', 'NUMBER_INVALID']
 
 /** Turns an upload ApiError into { messageKey, vars, items } translation descriptors. */
 function describeError(error) {
@@ -21,14 +20,6 @@ function describeError(error) {
       items: details.missingFields?.length ? [{ key: 'admin.progress.errors.missingList', vars: { fields: details.missingFields.join(', ') } }] : [],
     }
   }
-  if (code === 'INVALID_ROWS') {
-    const items = (details.errors ?? []).map((e) => ({
-      key: 'admin.progress.row',
-      vars: { row: e.row },
-      inner: { key: `admin.progress.rowCodes.${e.code}`, vars: ROW_FIELD_CODES.includes(e.code) ? { field: e.field } : { ward: e.wardNo, firstRow: e.firstRow } },
-    }))
-    return { message: { key: 'admin.progress.errors.INVALID_ROWS' }, items, total: details.errorCount ?? items.length }
-  }
   const key = translations.en.admin.progress.errors[code]
     ? `admin.progress.errors.${code}`
     : translations.en.errors[code]
@@ -39,23 +30,23 @@ function describeError(error) {
 
 /**
  * Small centred popup that follows a spreadsheet upload:
- *   uploading → checking → validating → success, or error / conflict-decision states.
+ *   uploading → checking → validating (then the overview is shown on the page),
+ *   saving → success after the Super Admin confirms, or an error state.
  * state: {
  *   stage, fileName, validatingKey,
  *   lines?: [{ key, vars, tone }]           summary on success
- *   rejected?: [{ key, vars }]              rows not imported (shown on success)
- *   conflicts?: [{ key, vars }], conflictTitleKey, alternativeKey
+ *   rejected?: [{ key, vars }]              records not imported (shown on success)
  *   error?
  * }
  */
-export default function UploadProgressModal({ state, onClose, onKeepExisting, onAlternative }) {
+export default function UploadProgressModal({ state, onClose }) {
   const { t, formatNumber } = useLanguage()
   const titleId = useId()
   const panelRef = useRef(null)
   const stage = state?.stage
-  const busy = stage in { uploading: 1, checking: 1, validating: 1 }
+  const busy = stage in { uploading: 1, checking: 1, validating: 1, saving: 1 }
   const needsClose = stage === 'error' || (stage === 'success' && state.rejected?.length > 0)
-  const closable = stage === 'error' || stage === 'conflicts' || stage === 'success'
+  const closable = stage === 'error' || stage === 'success'
 
   useEffect(() => {
     if (!stage) return undefined
@@ -74,9 +65,9 @@ export default function UploadProgressModal({ state, onClose, onKeepExisting, on
     uploading: t('admin.progress.uploading'),
     checking: t('admin.progress.checking'),
     validating: t(state.validatingKey ?? 'admin.progress.validatingCandidates'),
+    saving: t('admin.progress.saving'),
     success: t('admin.progress.success'),
     error: t('admin.progress.failed'),
-    conflicts: t(state.conflictTitleKey ?? 'admin.results.conflictTitle'),
   }[stage]
 
   const icon =
@@ -84,12 +75,10 @@ export default function UploadProgressModal({ state, onClose, onKeepExisting, on
       <CheckCircle2 className="h-7 w-7 text-emerald-600" />
     ) : stage === 'error' ? (
       <XCircle className="h-7 w-7 text-red-600" />
-    ) : stage === 'conflicts' ? (
-      <Scale className="h-7 w-7 text-amber-600" />
     ) : (
       <Loader2 className="h-7 w-7 animate-spin text-brand-600" />
     )
-  const iconBg = { success: 'bg-emerald-50', error: 'bg-red-50', conflicts: 'bg-amber-50' }[stage] ?? 'bg-brand-50'
+  const iconBg = { success: 'bg-emerald-50', error: 'bg-red-50' }[stage] ?? 'bg-brand-50'
   const tr = (d) => t(d.key, Object.fromEntries(Object.entries(d.vars ?? {}).map(([k, v]) => [k, typeof v === 'number' && k !== 'ward' ? formatNumber(v) : v])))
 
   return createPortal(
@@ -147,24 +136,6 @@ export default function UploadProgressModal({ state, onClose, onKeepExisting, on
             )}
             <p className="mt-2 text-xs text-slate-500">{t('admin.progress.nothingSaved')}</p>
           </div>
-        )}
-
-        {stage === 'conflicts' && (
-          <>
-            <div className="mt-3">
-              <ConflictList items={state.conflicts} />
-            </div>
-            <p className="mt-2 text-xs text-slate-500">{t('admin.results.conflictHint')}</p>
-            <div className="mt-5 flex flex-col gap-2">
-              <Button onClick={onKeepExisting}>{t('admin.results.keepExisting')}</Button>
-              <Button variant="secondary" onClick={onAlternative}>
-                {t(state.alternativeKey ?? 'admin.results.addSeparate')}
-              </Button>
-              <Button variant="ghost" onClick={onClose}>
-                {t('common.cancel')}
-              </Button>
-            </div>
-          </>
         )}
 
         {needsClose && (

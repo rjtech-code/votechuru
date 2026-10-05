@@ -1,91 +1,111 @@
 import { Ward } from '../models/Ward.js'
 import { Candidate, nameKeyOf } from '../models/Candidate.js'
+import { Result } from '../models/Result.js'
 import { validateRecord } from '../utils/validateResults.js'
+import { generateCandidateId } from '../utils/candidateId.js'
 import { fail, planCandidates, reopenWards, serializeCandidate } from '../utils/results.js'
 import { config } from '../config.js'
 
 const MAX_IMPORT = 10000
 const IMAGE_PATTERN = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+=*)$/
 
-const toDocument = (record) => ({ ...record, nameKey: nameKeyOf(record.name) })
+const toDocument = (record) => ({ candidateId: record.candidateId, name: record.name, nameKey: nameKeyOf(record.name), party: record.party, wardNo: record.wardNo })
+// The driver reports one write error as an object and several as an array.
+const writeErrorsOf = (error) => [].concat(error?.writeErrors ?? [])
+const isDuplicateKey = (error) => error?.code === 11000 || writeErrorsOf(error).some((e) => e.code === 11000)
 
 /**
- * POST /api/admin/candidates/import — { candidates, conflictResolution: 'keep' | 'add' }.
- * Re-validates every record and its ward, skips exact duplicates and only adds conflicting
- * records when the admin chose 'add'. Existing records are never modified.
+ * Validates candidate master records ({ name, party, wardNo }) and generates their IDs.
+ * Returns { records, rejected } — a record is rejected when it is invalid, its ward is not
+ * in the Ward Master or no Candidate ID can be generated for it.
  */
-export async function importCandidates(req, res) {
-  const { candidates, conflictResolution = 'keep' } = req.body ?? {}
-  if (!Array.isArray(candidates) || candidates.length > MAX_IMPORT) return fail(res, 400, 'BAD_REQUEST', 'No candidates to import.')
-
+async function prepareCandidates(rawRecords) {
   const records = []
-  for (const [index, raw] of candidates.entries()) {
-    const { record, errors } = validateRecord('candidates', raw)
-    if (errors) return fail(res, 422, 'INVALID_RECORD', `Candidate record ${index + 1} is invalid.`, { errors })
-    records.push(record)
+  const rejected = []
+  const parsed = rawRecords.map((raw) => ({ raw, ...validateRecord('candidates', raw) }))
+  const wardNos = [...new Set(parsed.filter((p) => p.record).map((p) => p.record.wardNo))]
+  const knownWards = new Set((await Ward.find({ wardNo: { $in: wardNos } }, { wardNo: 1 }).lean()).map((w) => w.wardNo))
+  for (const { raw, record, errors } of parsed) {
+    const label = { name: String(raw?.name ?? ''), wardNo: raw?.wardNo ?? null }
+    if (errors) {
+      rejected.push({ ...label, code: 'INVALID_RECORD' })
+      continue
+    }
+    if (!knownWards.has(record.wardNo)) {
+      rejected.push({ ...label, code: 'WARD_NOT_FOUND' })
+      continue
+    }
+    const generated = generateCandidateId(record.wardNo, record.party)
+    if (generated.code) rejected.push({ ...label, code: generated.code })
+    else records.push({ ...record, candidateId: generated.id })
   }
-
-  const knownWards = new Set((await Ward.find({ wardNo: { $in: [...new Set(records.map((r) => r.wardNo))] } }, { wardNo: 1 }).lean()).map((w) => w.wardNo))
-  const rejected = records.filter((r) => !knownWards.has(r.wardNo)).map((r) => ({ name: r.name, wardNo: r.wardNo, code: 'WARD_NOT_FOUND' }))
-  const valid = records.filter((r) => knownWards.has(r.wardNo))
-
-  const existing = await Candidate.find({ wardNo: { $in: [...knownWards] } }).lean()
-  const plan = planCandidates(existing, valid)
-  const add = conflictResolution === 'add'
-  const toInsert = add ? [...plan.fresh, ...plan.conflicts.map((c) => c.record)] : plan.fresh
-  if (toInsert.length) await Candidate.insertMany(toInsert.map(toDocument))
-  const reopened = await reopenWards(toInsert.map((r) => r.wardNo))
-
-  return res.json({
-    success: true,
-    added: toInsert.length,
-    duplicates: plan.duplicates,
-    conflictsKept: add ? 0 : plan.conflicts.length,
-    rejected,
-    reopened,
-  })
+  return { records, rejected }
 }
 
-/** POST /api/admin/candidates — { ...candidate, onConflict?: 'add' }. */
+/**
+ * POST /api/admin/candidates/import — { candidates: [{ name, party, wardNo }] } (after a
+ * sheet preview). Existing candidates are never modified or removed; duplicates are skipped
+ * and Candidate ID conflicts are reported, never saved.
+ */
+export async function importCandidates(req, res) {
+  const { candidates } = req.body ?? {}
+  if (!Array.isArray(candidates) || candidates.length > MAX_IMPORT) return fail(res, 400, 'BAD_REQUEST', 'No candidates to import.')
+
+  const { records, rejected } = await prepareCandidates(candidates)
+  const existing = await Candidate.find({ candidateId: { $in: [...new Set(records.map((r) => r.candidateId))] } }).lean()
+  const plan = planCandidates(existing, records)
+
+  let added = plan.fresh.length
+  const conflicts = plan.conflicts.map((c) => ({ name: c.record.name, wardNo: c.record.wardNo, candidateId: c.record.candidateId, existing: c.existing }))
+  if (plan.fresh.length) {
+    try {
+      await Candidate.insertMany(plan.fresh.map(toDocument), { ordered: false })
+    } catch (error) {
+      // Another request saved the same Candidate ID in the meantime: report, never overwrite.
+      if (!isDuplicateKey(error)) throw error
+      const failed = new Set(writeErrorsOf(error).map((e) => e.index ?? e.err?.index))
+      added -= failed.size
+      plan.fresh.filter((_, index) => failed.has(index)).forEach((r) => conflicts.push({ name: r.name, wardNo: r.wardNo, candidateId: r.candidateId, existing: null }))
+    }
+  }
+  // A new candidate makes a declared ward's result incomplete.
+  const reopened = added ? await reopenWards(plan.fresh.map((r) => r.wardNo)) : []
+  return res.json({ success: true, added, duplicates: plan.duplicates.length, conflicts, rejected, reopened })
+}
+
+/** POST /api/admin/candidates — { name, party, wardNo }; the Candidate ID is generated. */
 export async function createCandidate(req, res) {
   const { record, errors } = validateRecord('candidates', req.body)
   if (errors) return fail(res, 422, 'INVALID_RECORD', 'The candidate is invalid.', { errors })
   if (!(await Ward.exists({ wardNo: record.wardNo }))) return fail(res, 422, 'WARD_NOT_FOUND', 'This ward does not exist in the Ward Master Data.')
+  const generated = generateCandidateId(record.wardNo, record.party)
+  if (generated.code) return fail(res, 422, generated.code, 'A Candidate ID cannot be generated for this candidate.')
 
-  const sameCandidate = await Candidate.find({ wardNo: record.wardNo, nameKey: nameKeyOf(record.name) }).lean()
-  if (sameCandidate.some((c) => c.totalVotes === record.totalVotes)) return fail(res, 409, 'DUPLICATE_RECORD', 'Duplicate record skipped.')
-  if (sameCandidate.length && req.body.onConflict !== 'add') {
-    return fail(res, 409, 'CONFLICT', 'This candidate already exists for the ward with a different vote count.', { existing: serializeCandidate(sameCandidate[0]) })
+  const existing = await Candidate.findOne({ candidateId: generated.id }).lean()
+  if (existing) {
+    if (existing.nameKey === nameKeyOf(record.name)) return fail(res, 409, 'DUPLICATE_CANDIDATE', 'This candidate already exists.', { candidateId: generated.id })
+    return fail(res, 409, 'CANDIDATE_ID_CONFLICT', 'The generated Candidate ID is already used by another candidate.', {
+      candidateId: generated.id,
+      existing: serializeCandidate(existing),
+    })
   }
-  const candidate = await Candidate.create(toDocument(record))
+  let candidate
+  try {
+    candidate = await Candidate.create(toDocument({ ...record, candidateId: generated.id }))
+  } catch (error) {
+    if (isDuplicateKey(error)) return fail(res, 409, 'CANDIDATE_ID_CONFLICT', 'The generated Candidate ID is already used by another candidate.', { candidateId: generated.id })
+    throw error
+  }
   const reopened = await reopenWards([record.wardNo])
-  return res.status(201).json({ success: true, candidate: serializeCandidate(candidate), reopened })
+  return res.status(201).json({ success: true, candidate: serializeCandidate(candidate, null, { admin: true }), reopened })
 }
 
-/** PUT /api/admin/candidates/:id */
-export async function updateCandidate(req, res) {
-  const candidate = await Candidate.findById(req.params.id).catch(() => null)
-  if (!candidate) return fail(res, 404, 'NOT_FOUND', 'Candidate not found.')
-  const { record, errors } = validateRecord('candidates', req.body)
-  if (errors) return fail(res, 422, 'INVALID_RECORD', 'The candidate is invalid.', { errors })
-  if (!(await Ward.exists({ wardNo: record.wardNo }))) return fail(res, 422, 'WARD_NOT_FOUND', 'This ward does not exist in the Ward Master Data.')
-  const duplicate = await Candidate.exists({ _id: { $ne: candidate._id }, wardNo: record.wardNo, nameKey: nameKeyOf(record.name), totalVotes: record.totalVotes })
-  if (duplicate) return fail(res, 409, 'DUPLICATE_RECORD', 'Duplicate record skipped.')
-
-  const previousWard = candidate.wardNo
-  candidate.set(toDocument(record))
-  await candidate.save()
-  const reopened = await reopenWards([previousWard, record.wardNo])
-  return res.json({ success: true, candidate: serializeCandidate(candidate), reopened })
-}
-
-/** DELETE /api/admin/candidates/:id */
+/** DELETE /api/admin/candidates/:id — removes the candidate and its result. */
 export async function deleteCandidate(req, res) {
   const candidate = await Candidate.findByIdAndDelete(req.params.id).catch(() => null)
   if (!candidate) return fail(res, 404, 'NOT_FOUND', 'Candidate not found.')
-  const stillHasCandidates = await Candidate.exists({ wardNo: candidate.wardNo })
+  await Result.deleteMany({ candidate: candidate._id })
   const reopened = await reopenWards([candidate.wardNo])
-  if (!stillHasCandidates) await Ward.updateOne({ wardNo: candidate.wardNo }, { $set: { status: 'pending', declaredAt: null } })
   return res.json({ success: true, reopened })
 }
 
@@ -101,7 +121,7 @@ export async function setCandidateImage(req, res) {
   }
   const candidate = await Candidate.findByIdAndUpdate(req.params.id, { $set: update }, { new: true }).catch(() => null)
   if (!candidate) return fail(res, 404, 'NOT_FOUND', 'Candidate not found.')
-  return res.json({ success: true, candidate: serializeCandidate(candidate) })
+  return res.json({ success: true, candidate: serializeCandidate(candidate, null, { admin: true }) })
 }
 
 /** GET /api/candidates/:id/image — public photo (served separately to keep lists small). */
@@ -114,9 +134,10 @@ export async function getCandidateImage(req, res) {
   return res.send(Buffer.from(match[2], 'base64'))
 }
 
-/** DELETE /api/admin/results — removes all candidates and declarations; keeps wards and schedule. */
-export async function resetResults(req, res) {
+/** DELETE /api/admin/candidates — removes all candidates, their results and declarations; keeps wards and schedule. */
+export async function resetCandidates(req, res) {
   const { deletedCount } = await Candidate.deleteMany({})
+  await Result.deleteMany({})
   await Ward.updateMany({}, { $set: { status: 'pending', declaredAt: null } })
   return res.json({ success: true, deletedCandidates: deletedCount })
 }

@@ -92,7 +92,7 @@ export default function SearchResults({ results, onNavigate }) {
                 openProfile(c.id)
               }}
               title={c.name}
-              subtitle={`${c.party} · ${t('common.ward', { ward: c.wardNo })} · ${t('result.votesValue', { count: formatNumber(c.totalVotes) })}`}
+              subtitle={[c.party, t('common.ward', { ward: c.wardNo }), c.totalVotes != null && t('result.votesValue', { count: formatNumber(c.totalVotes) })].filter(Boolean).join(' · ')}
             />
           ))}
         </Group>

@@ -1,12 +1,12 @@
 /**
  * Churu Election Results — API (Express + MongoDB via Mongoose).
  *
- * Public (read-only, declared results only):
+ * Public (read-only; votes only for declared wards):
  *   GET  /api/wards  /api/results  /api/results/:wardNo  /api/candidates  /api/candidates/:id/image  /api/settings
  * Super Admin (Bearer token):
  *   POST /api/admin/login  POST /api/admin/logout  GET /api/admin/me  GET /api/admin/data
- *   POST /api/admin/upload-wards  POST /api/admin/upload-results  (spreadsheet previews)
- *   wards, candidates, declare/reopen, settings and resets under /api/admin (see routes/admin.js)
+ *   POST /api/admin/upload-wards  /upload-candidates  /upload-results[?ward=N]  (spreadsheet previews)
+ *   wards, candidates, results, declare/reopen, settings and resets under /api/admin (see routes/admin.js)
  *
  * All configuration comes from environment variables (see .env.example).
  * Run from the Backend folder with `npm run dev` (auto-restart) or `npm start`.

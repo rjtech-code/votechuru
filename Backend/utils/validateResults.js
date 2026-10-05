@@ -1,13 +1,14 @@
+import { generateCandidateId, parseCandidateId } from './candidateId.js'
+
 /**
- * Spreadsheet validation for the two upload types.
+ * Spreadsheet validation for the three upload types (wards, candidates, results).
  *
  * Columns are matched by header name in any order (case, extra spaces, a trailing dot
- * and spacing around "/" are ignored). Format errors in any row reject the whole file,
- * so a partial import can never leave incomplete data. The one exception is a candidate
- * row whose ward is not in the Ward Master: that row is reported as rejected and the
- * other valid rows are still returned.
+ * and spacing around "/" are ignored). A missing required column rejects the whole file.
+ * Otherwise every row is checked on its own: invalid rows are returned in `rejected` with
+ * a row-specific reason (never silently dropped) and the valid rows in `data`.
  */
-const MAX_TEXT = { name: 120, party: 80, candidateCode: 40, wardName: 120, areas: 500 }
+const MAX_TEXT = { name: 120, party: 80, wardName: 120, areas: 500 }
 
 const normalizeHeader = (value) =>
   String(value ?? '')
@@ -21,7 +22,7 @@ const isBlank = (value) => String(value ?? '').trim() === ''
 
 /** Accepts integers given as numbers or digit strings ("5,421" allowed). Returns null if invalid. */
 function parseWholeNumber(value) {
-  if (typeof value === 'number') return Number.isInteger(value) ? value : null
+  if (typeof value === 'number') return Number.isInteger(value) && value >= 0 ? value : null
   const text = String(value ?? '').trim().replace(/,/g, '')
   return /^\d+$/.test(text) ? Number(text) : null
 }
@@ -49,21 +50,32 @@ const parsers = {
     const value = parseWholeNumber(raw)
     return value === null ? { code: 'NUMBER_INVALID' } : { value }
   },
+  candidateId: (raw) => {
+    if (isBlank(raw)) return { code: 'REQUIRED' }
+    const value = parseCandidateId(raw)
+    return value ? { value } : { code: 'CANDIDATE_ID_INVALID' }
+  },
 }
 
+const WARD_FIELD = { key: 'wardNo', header: 'Ward No.', aliases: ['ward no', 'ward number'], required: true, parse: parsers.ward }
+
 export const SCHEMAS = {
+  wards: [
+    WARD_FIELD,
+    { key: 'wardName', header: 'Ward Name', aliases: ['ward name'], required: false, parse: parsers.text('wardName', false) },
+    { key: 'areas', header: 'Area / Localities', aliases: ['area/localities', 'area', 'areas', 'localities'], required: false, parse: parsers.text('areas', false) },
+    { key: 'totalVoters', header: 'Total Voters', aliases: ['total voters'], required: true, parse: parsers.count(true) },
+  ],
+  // Candidate Master: no votes and no Candidate ID (the server generates it).
   candidates: [
     { key: 'name', header: 'Name', aliases: ['name'], required: true, parse: parsers.text('name', true) },
     { key: 'party', header: 'Party', aliases: ['party'], required: true, parse: parsers.text('party', true) },
-    { key: 'wardNo', header: 'Ward No.', aliases: ['ward no', 'ward number'], required: true, parse: parsers.ward },
-    { key: 'totalVotes', header: 'Total Votes', aliases: ['total votes'], required: true, parse: parsers.count(true) },
-    { key: 'candidateCode', header: 'Candidate ID', aliases: ['candidate id'], required: false, parse: parsers.text('candidateCode', false) },
+    WARD_FIELD,
   ],
-  wards: [
-    { key: 'wardNo', header: 'Ward No.', aliases: ['ward no', 'ward number'], required: true, parse: parsers.ward },
-    { key: 'wardName', header: 'Ward Name', aliases: ['ward name'], required: false, parse: parsers.text('wardName', false) },
-    { key: 'areas', header: 'Area / Localities', aliases: ['area/localities', 'area', 'areas', 'localities'], required: false, parse: parsers.text('areas', false) },
-    { key: 'totalVoters', header: 'Total Voters', aliases: ['total voters'], required: false, parse: parsers.count(false) },
+  results: [
+    { key: 'candidateId', header: 'Candidate ID', aliases: ['candidate id', 'candidateid'], required: true, parse: parsers.candidateId },
+    WARD_FIELD,
+    { key: 'totalVotes', header: 'Total Votes', aliases: ['total votes', 'votes'], required: true, parse: parsers.count(true) },
   ],
 }
 
@@ -79,11 +91,12 @@ export function findColumns(headerRow = [], schema) {
 }
 
 /**
- * Validates sheet rows (row arrays, header first) against a schema.
- * Returns { ok: true, records } or { ok: false, code, message, ...details }.
- * Each record carries `row`, its spreadsheet row number (header = row 1).
+ * Parses sheet rows (row arrays, header first) against a schema.
+ * Returns { ok: false, code, message, ... } for file-level problems, otherwise
+ * { ok: true, records, rejected, totalRows }. Each record and rejection carries `row`,
+ * its spreadsheet row number (header = row 1).
  */
-function parseSheet(rows, schema, { maxRows }, extraErrors = () => []) {
+function parseSheet(rows, schema, { maxRows }) {
   const [headerRow, ...dataRows] = rows
   if (!headerRow) return { ok: false, code: 'EMPTY_SHEET', message: 'The Excel sheet is empty.' }
 
@@ -101,64 +114,113 @@ function parseSheet(rows, schema, { maxRows }, extraErrors = () => []) {
 
   const used = schema.filter((f) => columns[f.key] !== undefined)
   const records = []
-  const errors = []
+  const rejected = []
+  let totalRows = 0
   dataRows.forEach((cells, index) => {
     const raw = Object.fromEntries(used.map((f) => [f.key, cells[columns[f.key]]]))
     // Rows where every mapped cell is blank are ignored (e.g. trailing formatting).
     if (Object.values(raw).every(isBlank)) return
+    totalRows += 1
     const row = index + 2
     const record = { row }
+    const errors = []
     for (const field of schema) {
       const result = field.parse(raw[field.key])
       if (result.code) errors.push({ row, field: field.header, code: result.code })
       else record[field.key] = result.value
     }
-    records.push(record)
+    if (errors.length) rejected.push(...errors)
+    else records.push(record)
   })
 
-  errors.push(...extraErrors(records))
-  errors.sort((a, b) => a.row - b.row)
-  if (errors.length) {
-    return { ok: false, code: 'INVALID_ROWS', message: `Row ${errors[0].row}: ${errors[0].field} is invalid.`, errors: errors.slice(0, 100), errorCount: errors.length }
-  }
-  if (!records.length) return { ok: false, code: 'NO_ROWS', message: 'The Excel sheet has no data rows.' }
-  return { ok: true, records }
-}
-
-/** Rows repeating a Ward No. already used earlier in the same file. */
-function duplicateWardErrors(records) {
-  const firstRowByWard = new Map()
-  const errors = []
-  for (const record of records) {
-    if (record.wardNo == null) continue
-    if (firstRowByWard.has(record.wardNo)) {
-      errors.push({ row: record.row, field: 'Ward No.', code: 'DUPLICATE_WARD', wardNo: record.wardNo, firstRow: firstRowByWard.get(record.wardNo) })
-    } else firstRowByWard.set(record.wardNo, record.row)
-  }
-  return errors
-}
-
-/** Ward Master sheet: Ward No. required and unique within the file. */
-export function validateWardSheet(rows, options) {
-  const parsed = parseSheet(rows, SCHEMAS.wards, options, duplicateWardErrors)
-  if (!parsed.ok) return parsed
-  return { ok: true, data: parsed.records.map(({ row, ...ward }) => ward) }
+  if (!totalRows) return { ok: false, code: 'NO_ROWS', message: 'The Excel sheet has no data rows.' }
+  return { ok: true, records, rejected, totalRows }
 }
 
 /**
- * Candidate sheet. Rows whose ward is not in `knownWards` are returned in `rejected`
- * (never silently dropped); every other valid row is returned in `data`.
+ * Moves records failing `check` into `rejected`. `check(record)` returns null or the
+ * rejection details ({ field, code, ...vars }).
+ */
+function rejectWhere(parsed, check) {
+  const records = []
+  for (const record of parsed.records) {
+    const problem = check(record)
+    if (problem) parsed.rejected.push({ row: record.row, ...problem })
+    else records.push(record)
+  }
+  parsed.records = records
+}
+
+/** Rejects rows repeating a key already used by an earlier valid row of the same file. */
+function rejectRepeats(parsed, keyOf, details) {
+  const firstRow = new Map()
+  rejectWhere(parsed, (record) => {
+    const key = keyOf(record)
+    if (firstRow.has(key)) return details(record, firstRow.get(key))
+    firstRow.set(key, record.row)
+    return null
+  })
+}
+
+const finish = (parsed) => ({
+  ok: true,
+  totalRows: parsed.totalRows,
+  data: parsed.records,
+  rejected: parsed.rejected.sort((a, b) => a.row - b.row),
+})
+
+/** Ward Master sheet: Ward No. and Total Voters required; Ward No. unique within the file. */
+export function validateWardSheet(rows, options) {
+  const parsed = parseSheet(rows, SCHEMAS.wards, options)
+  if (!parsed.ok) return parsed
+  rejectRepeats(parsed, (r) => r.wardNo, (r, firstRow) => ({ field: 'Ward No.', code: 'DUPLICATE_WARD', ward: r.wardNo, firstRow }))
+  return finish(parsed)
+}
+
+/**
+ * Candidate Master sheet. Rows whose ward is not in `knownWards`, or for which no valid
+ * Candidate ID can be generated, are rejected. Valid rows get their generated `candidateId`.
  */
 export function validateCandidateSheet(rows, { knownWards, ...options }) {
   const parsed = parseSheet(rows, SCHEMAS.candidates, options)
   if (!parsed.ok) return parsed
-  const data = []
-  const rejected = []
-  for (const { row, ...record } of parsed.records) {
-    if (knownWards.has(record.wardNo)) data.push({ ...record, row })
-    else rejected.push({ row, wardNo: record.wardNo, name: record.name, code: 'WARD_NOT_FOUND' })
+  rejectWhere(parsed, (record) => {
+    if (!knownWards.has(record.wardNo)) return { field: 'Ward No.', code: 'WARD_NOT_FOUND', ward: record.wardNo }
+    const generated = generateCandidateId(record.wardNo, record.party)
+    if (generated.code) return { field: generated.code === 'PARTY_CODE_INVALID' ? 'Party' : 'Ward No.', code: generated.code, ward: record.wardNo }
+    record.candidateId = generated.id
+    return null
+  })
+  return finish(parsed)
+}
+
+/**
+ * Checks one parsed result record against the database. The spreadsheet is not trusted:
+ * the ward must exist, the candidate must exist and belong to that ward (and to `scopeWard`
+ * when the upload is for one ward). `candidates` maps Candidate ID → stored candidate.
+ * On success the record gains `candidate` (the candidate's _id), `name` and `party`.
+ */
+export function checkResultRecord(record, { candidates, knownWards, scopeWard = null }) {
+  if (!knownWards.has(record.wardNo)) return { field: 'Ward No.', code: 'WARD_NOT_FOUND', ward: record.wardNo }
+  if (scopeWard && record.wardNo !== scopeWard) return { field: 'Ward No.', code: 'OUTSIDE_WARD', ward: record.wardNo, scopeWard }
+  const candidate = candidates.get(record.candidateId)
+  if (!candidate) return { field: 'Candidate ID', code: 'CANDIDATE_NOT_FOUND', candidateId: record.candidateId }
+  if (candidate.wardNo !== record.wardNo) {
+    return { field: 'Ward No.', code: 'CANDIDATE_WARD_MISMATCH', candidateId: record.candidateId, ward: record.wardNo, candidateWard: candidate.wardNo }
   }
-  return { ok: true, data, rejected }
+  record.candidate = candidate._id
+  record.name = candidate.name
+  record.party = candidate.party
+  return null
+}
+
+/** Result sheet: Candidate ID, Ward No. and Total Votes; one row per candidate. */
+export function validateResultSheet(rows, { candidates, knownWards, scopeWard = null, ...options }) {
+  const parsed = parseSheet(rows, SCHEMAS.results, options)
+  if (!parsed.ok) return parsed
+  rejectWhere(parsed, (record) => checkResultRecord(record, { candidates, knownWards, scopeWard }))
+  rejectRepeats(parsed, (r) => r.candidateId, (r, firstRow) => ({ field: 'Candidate ID', code: 'DUPLICATE_CANDIDATE', candidateId: r.candidateId, firstRow }))
+  return finish(parsed)
 }
 
 /**
@@ -170,7 +232,7 @@ export function validateRecord(schemaName, raw = {}) {
   const record = {}
   const errors = []
   for (const field of SCHEMAS[schemaName]) {
-    const result = field.parse(raw[field.key])
+    const result = field.parse(raw?.[field.key])
     if (result.code) errors.push({ field: field.header, code: result.code })
     else record[field.key] = result.value
   }

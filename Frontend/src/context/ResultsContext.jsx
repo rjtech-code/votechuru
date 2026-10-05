@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { admin as adminApi, candidateImageUrl, getResults, getWards } from '../services/api'
+import { admin as adminApi, candidateImageUrl, getCandidates, getWards } from '../services/api'
 import { useAuth } from './AuthContext'
 import { buildWards, computeStats } from '../lib/wards'
 
@@ -12,8 +12,9 @@ const toCandidate = (c) => ({ ...c, image: c.hasImage ? candidateImageUrl(c.id, 
 /**
  * Ward / candidate / result data from the API (MongoDB is the source of truth).
  *
- * scope="public": wards plus DECLARED results only — the server never sends pending votes.
- *   Refreshes every minute and when the tab regains focus, so newly declared results appear.
+ * scope="public": wards and candidate profiles, with votes for DECLARED wards only — the
+ *   server never sends pending votes. Refreshes every minute and when the tab regains
+ *   focus, so new wards, candidates, photos and declared results appear.
  * scope="admin":  everything, including pending results, plus the admin actions. Every
  *   action is validated by the server and followed by a fresh load.
  */
@@ -43,8 +44,8 @@ export function ResultsProvider({ scope = 'public', children }) {
         const data = await call((t) => adminApi.data(t))
         setState({ wards: data.wards, candidates: data.candidates.map(toCandidate), ready: true, error: null })
       } else {
-        const [wards, results] = await Promise.all([getWards(), getResults()])
-        setState({ wards, candidates: results.flatMap((r) => r.candidates).map(toCandidate), ready: true, error: null })
+        const [wards, candidates] = await Promise.all([getWards(), getCandidates()])
+        setState({ wards, candidates: candidates.map(toCandidate), ready: true, error: null })
       }
     } catch (error) {
       setState((s) => ({ ...s, ready: true, error }))
@@ -81,15 +82,18 @@ export function ResultsProvider({ scope = 'public', children }) {
             addWard: (ward) => mutate((t) => adminApi.createWard(t, ward)),
             updateWard: (wardNo, ward) => mutate((t) => adminApi.updateWard(t, wardNo, ward)),
             deleteWard: (wardNo, { withCandidates = false } = {}) => mutate((t) => adminApi.deleteWard(t, wardNo, withCandidates)),
-            deleteWardCandidates: (wardNo) => mutate((t) => adminApi.deleteWardCandidates(t, wardNo)),
             declareWard: (wardNo) => mutate((t) => adminApi.declareWard(t, wardNo)),
             reopenWard: (wardNo) => mutate((t) => adminApi.reopenWard(t, wardNo)),
             resetWards: () => mutate((t) => adminApi.resetWards(t)),
-            importCandidates: (candidates, resolution) => mutate((t) => adminApi.importCandidates(t, candidates, resolution)),
-            createCandidate: (candidate, onConflict) => mutate((t) => adminApi.createCandidate(t, candidate, onConflict)),
-            updateCandidate: (id, candidate) => mutate((t) => adminApi.updateCandidate(t, id, candidate)),
+            importCandidates: (candidates) => mutate((t) => adminApi.importCandidates(t, candidates)),
+            createCandidate: (candidate) => mutate((t) => adminApi.createCandidate(t, candidate)),
             deleteCandidate: (id) => mutate((t) => adminApi.deleteCandidate(t, id)),
             setCandidateImage: (id, image) => mutate((t) => adminApi.setCandidateImage(t, id, image)),
+            resetCandidates: () => mutate((t) => adminApi.resetCandidates(t)),
+            importResults: (results, options) => mutate((t) => adminApi.importResults(t, results, options)),
+            setResult: (id, totalVotes) => mutate((t) => adminApi.setResult(t, id, totalVotes)),
+            deleteResult: (id) => mutate((t) => adminApi.deleteResult(t, id)),
+            deleteWardResults: (wardNo) => mutate((t) => adminApi.deleteWardResults(t, wardNo)),
             resetResults: () => mutate((t) => adminApi.resetResults(t)),
           }
         : {},
@@ -99,7 +103,7 @@ export function ResultsProvider({ scope = 'public', children }) {
   const value = useMemo(() => {
     const declaredWards = state.wards.filter((w) => w.status === 'declared').map((w) => w.wardNo)
     // Public visitors never receive votes for undeclared wards; `withheld` lets pages say
-    // "not declared yet" instead of "no candidates".
+    // "not declared yet" instead of showing result figures.
     const wards = buildWards(state.wards, state.candidates, declaredWards).map((w) => ({ ...w, withheld: !isAdmin && w.status !== 'declared' }))
     const candidatesById = new Map()
     for (const ward of wards) for (const row of ward.rows) candidatesById.set(row.id, { ...row, ward })

@@ -1,7 +1,8 @@
 import { Ward } from '../models/Ward.js'
 import { Candidate } from '../models/Candidate.js'
+import { Result } from '../models/Result.js'
 import { validateRecord } from '../utils/validateResults.js'
-import { fail, planWards, rankCandidates, serializeCandidate, serializeWard, wardParam } from '../utils/results.js'
+import { fail, planWards, rankResults, resultMap, serializeCandidate, serializeWard, wardParam } from '../utils/results.js'
 
 const MAX_IMPORT = 10000
 
@@ -70,23 +71,15 @@ export async function deleteWard(req, res) {
   if (candidateCount && req.query.withCandidates !== 'true') {
     return fail(res, 409, 'WARD_HAS_CANDIDATES', 'This ward has candidate records.', { candidateCount })
   }
+  await Result.deleteMany({ wardNo })
   await Candidate.deleteMany({ wardNo })
   await Ward.deleteOne({ wardNo })
   return res.json({ success: true, deletedCandidates: candidateCount })
 }
 
-/** DELETE /api/admin/wards/:wardNo/candidates — "Delete Ward Result": the ward stays in the Ward Master. */
-export async function deleteWardCandidates(req, res) {
-  const wardNo = wardParam(req.params.wardNo)
-  if (!wardNo || !(await Ward.exists({ wardNo }))) return fail(res, 404, 'WARD_NOT_FOUND', 'This ward does not exist.')
-  const { deletedCount } = await Candidate.deleteMany({ wardNo })
-  await Ward.updateOne({ wardNo }, { $set: { status: 'pending', declaredAt: null } })
-  return res.json({ success: true, deletedCandidates: deletedCount })
-}
-
 /**
  * POST /api/admin/wards/:wardNo/declare — the gate between private data and public results.
- * Requires an existing ward with candidates and a unique highest vote count.
+ * Requires an existing ward whose candidates all have results and a unique highest vote count.
  */
 export async function declareWard(req, res) {
   const wardNo = wardParam(req.params.wardNo)
@@ -94,12 +87,18 @@ export async function declareWard(req, res) {
   if (!ward) return fail(res, 404, 'WARD_NOT_FOUND', 'This ward does not exist.')
   const candidates = await Candidate.find({ wardNo }).lean()
   if (!candidates.length) return fail(res, 422, 'NO_CANDIDATES', 'Result cannot be declared because the ward has no candidates.')
-  const { isTie, winner } = rankCandidates(candidates)
+  const results = resultMap(await Result.find({ candidate: { $in: candidates.map((c) => c._id) } }).lean())
+  if (!results.size) return fail(res, 422, 'NO_RESULTS', 'Result cannot be declared because no result data has been uploaded for this ward.')
+  const missing = candidates.filter((c) => !results.has(String(c._id)))
+  if (missing.length) {
+    return fail(res, 422, 'RESULTS_INCOMPLETE', 'Result cannot be declared because some candidates have no result data.', { missing: missing.map((c) => c.name) })
+  }
+  const { isTie, winner } = rankResults(candidates.map((c) => ({ ...c, totalVotes: results.get(String(c._id)).totalVotes })))
   if (isTie) return fail(res, 409, 'TIE', 'Result cannot be declared because the ward has a tie.')
   ward.status = 'declared'
   ward.declaredAt = new Date()
   await ward.save()
-  return res.json({ success: true, ward: serializeWard(ward), winner: serializeCandidate(winner) })
+  return res.json({ success: true, ward: serializeWard(ward), winner: serializeCandidate(winner, results.get(String(winner._id))) })
 }
 
 /** POST /api/admin/wards/:wardNo/reopen — back to Pending; candidate data is kept. */

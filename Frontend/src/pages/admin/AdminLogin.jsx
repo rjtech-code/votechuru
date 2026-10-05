@@ -28,7 +28,7 @@ export default function AdminLogin() {
   // Logging in sets `user`, which redirects to the page the admin originally asked for.
   if (user) {
     const from = location.state?.from
-    return <Navigate to={from && from !== '/admin' ? from : '/admin/dashboard'} replace />
+    return <Navigate to={from && from !== '/admin/login' ? from : '/admin'} replace />
   }
 
   return (

@@ -54,7 +54,7 @@ export default function ElectionSummary() {
               <CardHeader title={t('pages.summary.votesByWard')} />
               <div className="max-h-[28rem] overflow-y-auto p-5">
                 <BarList
-                  items={wards.map((w) => ({ key: w.wardNo, label: wardLabel(w), value: w.totalVotes }))}
+                  items={wards.filter((w) => w.totalVotes != null).map((w) => ({ key: w.wardNo, label: wardLabel(w), value: w.totalVotes }))}
                   caption={t('pages.summary.votesByWardNote')}
                 />
               </div>

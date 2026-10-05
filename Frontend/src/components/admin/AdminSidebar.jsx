@@ -1,15 +1,14 @@
 import { Link, NavLink } from 'react-router-dom'
-import { BarChart3, LayoutDashboard, LogOut, MapPin, Settings, Upload, X } from 'lucide-react'
+import { BarChart3, Home, LogOut, MapPin, Settings, Users, X } from 'lucide-react'
 import { LogoTile } from '../BrandMark'
 import { useLanguage } from '../../i18n/I18nContext'
 import { cn } from '../../lib/format'
 
 export const adminNav = [
-  { to: '/admin/dashboard', labelKey: 'admin.nav.dashboard', icon: LayoutDashboard },
-  { to: '/admin/results', labelKey: 'admin.nav.results', icon: BarChart3 },
-  { to: '/admin/upload', labelKey: 'admin.nav.upload', icon: Upload },
+  { to: '/admin', labelKey: 'admin.nav.home', icon: Home },
   { to: '/admin/wards', labelKey: 'admin.nav.wards', icon: MapPin },
-  { to: '/admin/settings', labelKey: 'admin.nav.settings', icon: Settings },
+  { to: '/admin/candidates', labelKey: 'admin.nav.candidates', icon: Users },
+  { to: '/admin/results', labelKey: 'admin.nav.results', icon: BarChart3 },
 ]
 
 const itemClass = ({ isActive }) =>
@@ -38,7 +37,7 @@ export default function AdminSidebar({ open, onClose, onLogout }) {
         aria-label={t('admin.panel')}
       >
         <div className="flex h-16 items-center justify-between gap-2 border-b border-white/10 px-4">
-          <Link to="/admin/dashboard" className="flex min-w-0 items-center gap-2.5">
+          <Link to="/admin" className="flex min-w-0 items-center gap-2.5">
             <LogoTile className="h-9 w-9" />
             <span className="min-w-0 leading-tight">
               <span className="block truncate text-[14px] font-extrabold text-white">{t('site.title')}</span>
@@ -53,7 +52,7 @@ export default function AdminSidebar({ open, onClose, onLogout }) {
           <ul className="space-y-1">
             {adminNav.map(({ to, labelKey, icon: Icon }) => (
               <li key={to}>
-                <NavLink to={to} className={itemClass} onClick={onClose}>
+                <NavLink to={to} end={to === '/admin'} className={itemClass} onClick={onClose}>
                   <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
                   {t(labelKey)}
                 </NavLink>
@@ -61,7 +60,11 @@ export default function AdminSidebar({ open, onClose, onLogout }) {
             ))}
           </ul>
         </nav>
-        <div className="border-t border-white/10 p-3">
+        <div className="space-y-1 border-t border-white/10 p-3">
+          <NavLink to="/admin/settings" className={itemClass} onClick={onClose}>
+            <Settings className="h-[18px] w-[18px]" aria-hidden="true" />
+            {t('admin.nav.settings')}
+          </NavLink>
           <button
             type="button"
             onClick={onLogout}

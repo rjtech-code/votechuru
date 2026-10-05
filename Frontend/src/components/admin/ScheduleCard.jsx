@@ -97,7 +97,7 @@ function EventEditor({ settingKey, labelKey }) {
   )
 }
 
-/** Dashboard section for the election date and result declaration date. */
+/** Election Schedule page section: the election date and the result declaration date. */
 export default function ScheduleCard() {
   const { t } = useLanguage()
   return (

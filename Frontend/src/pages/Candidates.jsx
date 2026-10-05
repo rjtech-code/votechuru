@@ -48,6 +48,9 @@ function CandidateCard({ candidate }) {
           <StatusBadge status={STATUS_LABEL[candidate.wardStatus]} className="shrink-0" />
         )}
       </div>
+      {candidate.totalVotes == null ? (
+        <p className="mt-4 w-full border-t border-slate-100 pt-3 text-xs text-slate-500">{t('result.notDeclaredShort')}</p>
+      ) : (
       <dl className="mt-4 grid w-full grid-cols-3 gap-3 border-t border-slate-100 pt-3 text-sm">
         <div>
           <dt className="text-xs text-slate-500">{t('result.totalVotes')}</dt>
@@ -62,6 +65,7 @@ function CandidateCard({ candidate }) {
           <dd className="mt-0.5 font-semibold tabular-nums text-navy-900">{candidate.position}</dd>
         </div>
       </dl>
+      )}
     </button>
   )
 }

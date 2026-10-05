@@ -9,6 +9,7 @@ import FilterBar from '../components/FilterBar'
 import NoResults from '../components/NoResults'
 import CandidateRow from '../components/CandidateRow'
 import StatusBadge, { wardStatus } from '../components/StatusBadge'
+import { useVotesGivenText } from '../components/VotesGiven'
 import { useFilterParams } from '../hooks/useFilterParams'
 import { useLanguage } from '../i18n/I18nContext'
 import { useResults } from '../context/ResultsContext'
@@ -21,6 +22,7 @@ const PAGE_SIZE = 10
 /** One ward: header with status, then its candidates by votes (each opens a profile). */
 function WardGroup({ ward, rows }) {
   const { t, formatNumber } = useLanguage()
+  const votesGiven = useVotesGivenText()(ward)
   const label = t('common.ward', { ward: ward.wardNo })
   return (
     <Card as="article" aria-labelledby={`ward-${ward.wardNo}`} className="overflow-hidden">
@@ -34,7 +36,8 @@ function WardGroup({ ward, rows }) {
           </div>
           <p className="mt-0.5 truncate text-xs text-slate-500">
             {ward.wardName && <>{ward.wardName} · </>}
-            {t('result.candidatesCount', { count: formatNumber(ward.rows.length) })} · {t('result.totalVotes')}: {formatNumber(ward.totalVotes)}
+            {t('result.candidatesCount', { count: formatNumber(ward.rows.length) })}
+            {votesGiven && <> · {votesGiven}</>}
             {ward.margin != null && <> · {t('result.margin')}: {formatNumber(ward.margin)}</>}
           </p>
         </div>
@@ -51,9 +54,9 @@ function WardGroup({ ward, rows }) {
           ))}
         </ul>
       ) : (
-        <p className="px-5 py-4 text-sm text-slate-500">{t(ward.withheld ? (ward.status === 'tie' ? 'result.tieNote' : 'result.pendingNote') : 'result.noCandidates')}</p>
+        <p className="px-5 py-4 text-sm text-slate-500">{t('result.noCandidates')}</p>
       )}
-      {ward.status !== 'declared' && ward.rows.length > 0 && (
+      {ward.status !== 'declared' && rows.length > 0 && (
         <p className="border-t border-slate-100 bg-slate-50/60 px-5 py-2.5 text-xs text-slate-500">
           {ward.status === 'tie' ? t('result.tieNote') : t('result.pendingNote')}
         </p>

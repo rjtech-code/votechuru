@@ -24,6 +24,9 @@ export default function Modal({ open, onClose, title, description, size = 'md', 
     document.body.style.overflow = 'hidden'
 
     const handleKeyDown = (event) => {
+      // With stacked dialogs (e.g. a profile opened from a ward), only the top one reacts.
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"]')
+      if (dialogs[dialogs.length - 1] !== panel) return
       if (event.key === 'Escape') onCloseRef.current()
       if (event.key === 'Tab' && panel) {
         // Keep keyboard focus inside the dialog.

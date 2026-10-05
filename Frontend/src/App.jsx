@@ -12,10 +12,12 @@ import About from './pages/About'
 import NotFound from './pages/NotFound'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminDashboard from './pages/admin/AdminDashboard'
+import AdminCandidates from './pages/admin/AdminCandidates'
 import AdminResults from './pages/admin/AdminResults'
 import AdminUpload from './pages/admin/AdminUpload'
 import AdminWards from './pages/admin/AdminWards'
 import AdminSettings from './pages/admin/AdminSettings'
+import AdminElectionSchedule from './pages/admin/AdminElectionSchedule'
 
 export default function App() {
   return (
@@ -34,16 +36,20 @@ export default function App() {
 
       {/* Not linked from the public site: administration is reached by visiting /admin directly. */}
       <Route path="admin">
-        <Route index element={<AdminLogin />} />
-        <Route path="login" element={<Navigate to="/admin" replace />} />
         <Route element={<AdminLayout />}>
-          <Route path="dashboard" element={<AdminDashboard />} />
-          <Route path="results" element={<AdminResults />} />
-          <Route path="upload" element={<AdminUpload />} />
+          <Route index element={<AdminDashboard />} />
+          <Route path="home" element={<Navigate to="/admin" replace />} />
+          <Route path="dashboard" element={<Navigate to="/admin" replace />} />
           <Route path="wards" element={<AdminWards />} />
+          <Route path="candidates" element={<AdminCandidates />} />
+          <Route path="results" element={<AdminResults />} />
+          <Route path="results/upload" element={<AdminUpload />} />
+          <Route path="upload" element={<Navigate to="/admin/results/upload" replace />} />
           <Route path="settings" element={<AdminSettings />} />
-          <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="settings/election-schedule" element={<AdminElectionSchedule />} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>
+        <Route path="login" element={<AdminLogin />} />
       </Route>
     </Routes>
   )

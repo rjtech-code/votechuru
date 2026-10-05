@@ -1,23 +1,26 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CheckCircle2, ExternalLink, LayoutGrid, List, RotateCcw, Scale, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ExternalLink, Eye, LayoutGrid, List, RotateCcw, Scale, Trash2, Upload } from 'lucide-react'
 import FilterBar from '../FilterBar'
 import StatusBadge, { wardStatus } from '../StatusBadge'
 import CandidateAvatar from '../CandidateAvatar'
+import { useVotesGivenText } from '../VotesGiven'
 import FormModal from './FormModal'
-import ManualResultForm from './ManualResultForm'
 import RowActions from './RowActions'
+import WardDetailModal from './WardDetailModal'
 import Badge from '../ui/Badge'
 import Button from '../ui/Button'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import Modal from '../ui/Modal'
 import Pagination, { paginate } from '../ui/Pagination'
 import { EmptyState } from '../ui/States'
+import { Field, Input } from '../ui/Form'
+import { useForm } from '../../hooks/useForm'
 import { useResults } from '../../context/ResultsContext'
 import { useToast } from '../../context/ToastContext'
 import { useCandidateProfile } from '../../context/CandidateProfileContext'
 import { useLanguage } from '../../i18n/I18nContext'
-import { matchesCandidate } from '../../lib/wards'
+import { matchesCandidate, validateVotesInput } from '../../lib/wards'
 import { wardPath } from '../../lib/paths'
 import { cn } from '../../lib/format'
 
@@ -33,29 +36,45 @@ function WinnerBadge() {
   )
 }
 
+/** Votes, or a note that no result has been uploaded for this candidate yet. */
+function Votes({ row, className }) {
+  const { t, formatNumber } = useLanguage()
+  return row.totalVotes != null ? (
+    <span className={cn('font-semibold tabular-nums text-navy-900', className)}>{formatNumber(row.totalVotes)}</span>
+  ) : (
+    <span className="text-xs text-slate-400">{t('admin.wardDetail.noResult')}</span>
+  )
+}
+
 /** Candidate as a list row or a card; the name opens the (manageable) profile popup. */
 function CandidateEntry({ row, isWinner, mode, onOpen, onEdit, onDelete }) {
-  const { t, formatNumber, formatPercent } = useLanguage()
+  const { t, formatPercent } = useLanguage()
   const nameButton = (
     <button type="button" onClick={onOpen} className="truncate text-left font-semibold text-navy-900 hover:text-brand-700 hover:underline" aria-label={t('result.viewProfile', { name: row.name })}>
       {row.name}
     </button>
   )
+  const subline = (
+    <span className="truncate text-xs text-slate-500">
+      {row.party || '—'} · <span className="font-mono">{row.candidateId ?? t('admin.candidates.idMissing')}</span>
+    </span>
+  )
+  const actions = <RowActions label={row.name} onEdit={onEdit} onDelete={row.totalVotes != null ? onDelete : undefined} />
   if (mode === 'list') {
     return (
       <li className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
-        <span className="w-5 shrink-0 text-sm tabular-nums text-slate-400">{row.position}</span>
+        <span className="w-5 shrink-0 text-sm tabular-nums text-slate-400">{row.position ?? ''}</span>
         <CandidateAvatar candidate={row} size="sm" />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex flex-wrap items-center gap-2">
             {nameButton}
             {isWinner && <WinnerBadge />}
           </span>
-          <span className="truncate text-xs text-slate-500">{row.party || '—'}</span>
+          {subline}
         </span>
-        <span className="text-right text-sm font-semibold tabular-nums text-navy-900">{formatNumber(row.totalVotes)}</span>
-        <span className="hidden w-14 text-right text-xs tabular-nums text-slate-500 sm:inline">{formatPercent(row.percent)}</span>
-        <RowActions label={row.name} onEdit={onEdit} onDelete={onDelete} />
+        <Votes row={row} className="text-right text-sm" />
+        <span className="hidden w-14 text-right text-xs tabular-nums text-slate-500 sm:inline">{row.percent != null ? formatPercent(row.percent) : ''}</span>
+        {actions}
       </li>
     )
   }
@@ -63,9 +82,9 @@ function CandidateEntry({ row, isWinner, mode, onOpen, onEdit, onDelete }) {
     <li className={cn('flex flex-col rounded-lg border p-3', isWinner ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200/80 bg-white')}>
       <div className="flex items-start gap-3">
         <CandidateAvatar candidate={row} size="md" />
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
           {nameButton}
-          <p className="truncate text-xs text-slate-500">{row.party || '—'}</p>
+          {subline}
           {isWinner && (
             <div className="mt-1">
               <WinnerBadge />
@@ -75,17 +94,22 @@ function CandidateEntry({ row, isWinner, mode, onOpen, onEdit, onDelete }) {
       </div>
       <div className="mt-3 flex items-end justify-between gap-2 border-t border-slate-100 pt-2">
         <div className="text-xs text-slate-500">
-          <span className="block text-base font-bold tabular-nums text-navy-900">{formatNumber(row.totalVotes)}</span>
-          {t('result.position')} {row.position} · {formatPercent(row.percent)}
+          <Votes row={row} className="block text-base font-bold" />
+          {row.position != null && (
+            <>
+              {t('result.position')} {row.position} · {formatPercent(row.percent)}
+            </>
+          )}
         </div>
-        <RowActions label={row.name} onEdit={onEdit} onDelete={onDelete} />
+        {actions}
       </div>
     </li>
   )
 }
 
-function WardBlock({ ward, rows, mode, onDeclare, onReopen, onDeleteWard, onEdit, onDeleteCandidate, onOpen }) {
+function WardBlock({ ward, rows, mode, onView, onDeclare, onReopen, onDeleteResults, onEdit, onDeleteResult, onOpen }) {
   const { t, formatNumber } = useLanguage()
+  const votesGivenText = useVotesGivenText()
   return (
     <article aria-labelledby={`admin-ward-${ward.wardNo}`} className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(16,24,40,0.05)]">
       <header className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
@@ -96,37 +120,46 @@ function WardBlock({ ward, rows, mode, onDeclare, onReopen, onDeleteWard, onEdit
             </h3>
             <StatusBadge status={wardStatus(ward)} />
           </div>
-          <p className="mt-0.5 truncate text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-500">
             {ward.wardName && <>{ward.wardName} · </>}
-            {t('result.candidatesCount', { count: formatNumber(ward.rows.length) })} · {t('result.totalVotes')}: {formatNumber(ward.totalVotes)}
+            {t('result.candidatesCount', { count: formatNumber(ward.rows.length) })}
+            {ward.votesGiven != null || ward.totalVoters != null ? <> · {votesGivenText(ward)}</> : null} ·{' '}
+            {t(ward.status === 'declared' ? 'admin.results.declaredYes' : 'admin.results.declaredNo')}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            href={wardPath(ward.wardNo)}
-            target="_blank"
-            rel="noopener noreferrer"
-            variant="ghost"
-            size="sm"
-            icon={ExternalLink}
-            aria-label={`${t('admin.results.viewWard', { ward: ward.wardNo })} ${t('common.opensNewTab')}`}
-          >
+          <Button variant="ghost" size="sm" icon={Eye} onClick={() => onView(ward)}>
             {t('admin.results.view')}
           </Button>
+          {ward.rows.length > 0 && (
+            <Button to={`/admin/results/upload?ward=${ward.wardNo}`} variant="secondary" size="sm" icon={Upload}>
+              {t('admin.results.uploadWard')}
+            </Button>
+          )}
           {ward.status === 'declared' ? (
             <Button variant="secondary" size="sm" icon={RotateCcw} onClick={() => onReopen(ward)}>
               {t('admin.results.reopen')}
             </Button>
           ) : (
-            <Button size="sm" icon={CheckCircle2} onClick={() => onDeclare(ward)} disabled={!ward.rows.length}>
+            <Button size="sm" icon={CheckCircle2} onClick={() => onDeclare(ward)} disabled={!ward.hasResults}>
               {t('admin.results.declare')}
             </Button>
           )}
-          {ward.rows.length > 0 && (
-            <Button variant="ghost" size="sm" icon={Trash2} className="text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => onDeleteWard(ward)}>
+          {ward.hasResults && (
+            <Button variant="ghost" size="sm" icon={Trash2} className="text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => onDeleteResults(ward)}>
               {t('admin.results.deleteWard')}
             </Button>
           )}
+          <Button
+            href={wardPath(ward.wardNo)}
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="ghost"
+            size="icon"
+            icon={ExternalLink}
+            aria-label={`${t('admin.results.viewWard', { ward: ward.wardNo })} ${t('common.opensNewTab')}`}
+            title={t('admin.results.viewWard', { ward: ward.wardNo })}
+          />
         </div>
       </header>
       {ward.rows.length === 0 ? (
@@ -141,7 +174,7 @@ function WardBlock({ ward, rows, mode, onDeclare, onReopen, onDeleteWard, onEdit
               isWinner={ward.winner?.id === row.id}
               onOpen={() => onOpen(row)}
               onEdit={() => onEdit(row)}
-              onDelete={() => onDeleteCandidate(row)}
+              onDelete={() => onDeleteResult(row)}
             />
           ))}
         </ul>
@@ -150,18 +183,63 @@ function WardBlock({ ward, rows, mode, onDeclare, onReopen, onDeleteWard, onEdit
   )
 }
 
+/** Explicit edit of one candidate's vote count (returns a declared ward to Pending). */
+function VotesForm({ candidate, onClose }) {
+  const { t } = useLanguage()
+  const notify = useToast()
+  const { setResult } = useResults()
+  const validate = (values) => validateVotesInput(values).errors ?? {}
+  const { bind, errors, handleSubmit, submitting, formError } = useForm({ totalVotes: candidate.totalVotes != null ? String(candidate.totalVotes) : '' }, validate)
+
+  const save = async (values) => {
+    const response = await setResult(candidate.id, validateVotesInput(values).record.totalVotes)
+    notify(t('admin.results.updated'))
+    if (response.reopened?.length) notify(t('admin.results.autoReopened', { wards: response.reopened.join(', ') }), 'warning')
+    onClose()
+  }
+
+  return (
+    <FormModal
+      open
+      onClose={onClose}
+      size="sm"
+      title={t('admin.results.editTitle')}
+      description={`${candidate.name} · ${candidate.party} · ${t('common.ward', { ward: candidate.wardNo })}`}
+      formId="votes-form"
+      submitLabel={t('admin.results.saveVotes')}
+      submitting={submitting}
+      formError={formError}
+    >
+      <form id="votes-form" onSubmit={handleSubmit(save)} noValidate>
+        <Field label={t('admin.columns.totalVotes')} required error={errors.totalVotes && t(errors.totalVotes)}>
+          {(p) => <Input {...p} {...bind('totalVotes')} inputMode="numeric" autoComplete="off" />}
+        </Field>
+      </form>
+    </FormModal>
+  )
+}
+
+/** Why a ward cannot be declared yet, in the order the server checks it. */
+function declareBlocker(ward) {
+  if (!ward.rows.length) return 'errors.NO_CANDIDATES'
+  if (!ward.hasResults) return 'errors.NO_RESULTS'
+  if (!ward.resultsComplete) return 'admin.results.declareIncomplete'
+  if (ward.isTie) return 'admin.results.declareTied'
+  return null
+}
+
 /** Ward-grouped admin result list (wards by number, candidates by votes) with all result actions. */
 export default function WardResultList() {
   const { t, formatNumber, errorText } = useLanguage()
-  const { wards, updateCandidate, deleteCandidate, deleteWardCandidates, declareWard, reopenWard } = useResults()
+  const { wards, deleteResult, deleteWardResults, declareWard, reopenWard } = useResults()
   const { openProfile } = useCandidateProfile()
   const notify = useToast()
   const [searchParams] = useSearchParams()
-  // The dashboard links here with ?ward=<n> to open one ward directly.
+  // Links elsewhere in the panel open one ward directly with ?ward=<n>.
   const [filters, setFilters] = useState({ q: '', ward: searchParams.get('ward') ?? '', status: '' })
   const [mode, setMode] = useState('cards')
   const [page, setPage] = useState(1)
-  const [dialog, setDialog] = useState(null) // { type, ward?, record? }
+  const [dialog, setDialog] = useState(null) // { type, ward?, record?, reason? }
 
   const close = () => setDialog(null)
   const reportReopened = (reopened) => {
@@ -188,16 +266,12 @@ export default function WardResultList() {
     setPage(1)
   }
 
-  const saveEdit = async (record) => {
-    // The server rejects duplicates (DUPLICATE_RECORD) and unknown wards; the form shows those.
-    const response = await updateCandidate(dialog.record.id, record)
-    close()
-    notify(t('admin.results.updated'))
-    reportReopened(response.reopened)
-  }
-
   const recordLine = (r) => t('admin.results.recordLine', { name: r.name, ward: r.wardNo, votes: formatNumber(r.totalVotes) })
   const declareWinner = dialog?.type === 'declare' && dialog.ward.rows[0]
+  const openDeclare = (ward) => {
+    const reason = declareBlocker(ward)
+    setDialog(reason ? { type: 'cannotDeclare', ward, reason } : { type: 'declare', ward })
+  }
 
   if (!wards.length) return <EmptyState title={t('admin.wards.empty')} description={t('admin.wards.emptyText')} action={<Button to="/admin/wards">{t('admin.upload.goToWards')}</Button>} />
 
@@ -256,11 +330,12 @@ export default function WardResultList() {
               rows={rows}
               mode={mode}
               onOpen={(row) => openProfile(row.id, { manage: true })}
-              onDeclare={(w) => setDialog({ type: w.canDeclare ? 'declare' : 'tied', ward: w })}
+              onView={(w) => setDialog({ type: 'view', ward: w })}
+              onDeclare={openDeclare}
               onReopen={(w) => setDialog({ type: 'reopen', ward: w })}
-              onDeleteWard={(w) => setDialog({ type: 'deleteWard', ward: w })}
+              onDeleteResults={(w) => setDialog({ type: 'deleteResults', ward: w })}
               onEdit={(record) => setDialog({ type: 'edit', record })}
-              onDeleteCandidate={(record) => setDialog({ type: 'deleteCandidate', record })}
+              onDeleteResult={(record) => setDialog({ type: 'deleteResult', record })}
             />
           ))}
           {pageCount > 1 && (
@@ -272,6 +347,19 @@ export default function WardResultList() {
       ) : (
         <EmptyState />
       )}
+
+      <WardDetailModal
+        wardNo={dialog?.type === 'view' ? dialog.ward.wardNo : null}
+        onClose={close}
+        footerActions={
+          dialog?.type === 'view' &&
+          dialog.ward.status !== 'declared' && (
+            <Button icon={CheckCircle2} onClick={() => openDeclare(dialog.ward)} disabled={!dialog.ward.hasResults}>
+              {t('admin.results.declare')}
+            </Button>
+          )
+        }
+      />
 
       <ConfirmDialog
         open={dialog?.type === 'declare'}
@@ -294,9 +382,9 @@ export default function WardResultList() {
             await declareWard(ward.wardNo)
             notify(t('admin.results.declared', { ward: ward.wardNo }))
           } catch (error) {
-            // The server is the final check: a tie found there opens the tie explanation.
-            if (error.code === 'TIE') {
-              setDialog({ type: 'tied', ward })
+            // The server is the final check: a tie or missing result found there is explained.
+            if (['TIE', 'RESULTS_INCOMPLETE', 'NO_RESULTS', 'NO_CANDIDATES'].includes(error.code)) {
+              setDialog({ type: 'cannotDeclare', ward, reason: error.code === 'TIE' ? 'admin.results.declareTied' : `errors.${error.code}` })
               return false
             }
             if (error.code !== 'UNAUTHORIZED') notify(errorText(error), 'error')
@@ -305,11 +393,17 @@ export default function WardResultList() {
         onClose={close}
       />
 
-      <Modal open={dialog?.type === 'tied'} onClose={close} title={t('admin.results.declareTitle')} size="sm" footer={<Button onClick={close}>{t('common.close')}</Button>}>
-        <p className="flex items-start gap-2 text-sm text-slate-700">
-          <Scale className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
-          {t('admin.results.declareTied')}
-        </p>
+      <Modal open={dialog?.type === 'cannotDeclare'} onClose={close} title={t('admin.results.declareTitle')} size="sm" footer={<Button onClick={close}>{t('common.close')}</Button>}>
+        {dialog?.type === 'cannotDeclare' && (
+          <p className="flex items-start gap-2 text-sm text-slate-700">
+            {dialog.reason === 'admin.results.declareTied' ? (
+              <Scale className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+            )}
+            {t(dialog.reason, { count: formatNumber(dialog.ward.rows.length - dialog.ward.resultCount) })}
+          </p>
+        )}
       </Modal>
 
       <ConfirmDialog
@@ -328,13 +422,13 @@ export default function WardResultList() {
       />
 
       <ConfirmDialog
-        open={dialog?.type === 'deleteWard'}
+        open={dialog?.type === 'deleteResults'}
         title={t('admin.results.deleteWardTitle')}
-        message={dialog?.type === 'deleteWard' && t('admin.results.deleteWardConfirm', { ward: dialog.ward.wardNo, count: formatNumber(dialog.ward.rows.length) })}
+        message={dialog?.type === 'deleteResults' && t('admin.results.deleteWardConfirm', { ward: dialog.ward.wardNo, count: formatNumber(dialog.ward.resultCount) })}
         confirmLabel={t('admin.results.deleteWard')}
         onConfirm={() =>
           run(async () => {
-            await deleteWardCandidates(dialog.ward.wardNo)
+            await deleteWardResults(dialog.ward.wardNo)
             notify(t('admin.results.wardDeleted', { ward: dialog.ward.wardNo }))
           })
         }
@@ -342,10 +436,10 @@ export default function WardResultList() {
       />
 
       <ConfirmDialog
-        open={dialog?.type === 'deleteCandidate'}
+        open={dialog?.type === 'deleteResult'}
         title={t('admin.results.deleteCandidateTitle')}
         message={
-          dialog?.type === 'deleteCandidate' && (
+          dialog?.type === 'deleteResult' && (
             <>
               {t('admin.results.deleteMessage')}
               <span className="mt-2 block font-semibold text-navy-900">{recordLine(dialog.record)}</span>
@@ -355,7 +449,7 @@ export default function WardResultList() {
         confirmLabel={t('admin.results.deleteCandidate')}
         onConfirm={() =>
           run(async () => {
-            const response = await deleteCandidate(dialog.record.id)
+            const response = await deleteResult(dialog.record.id)
             notify(t('admin.results.deleted'))
             reportReopened(response.reopened)
           })
@@ -363,14 +457,7 @@ export default function WardResultList() {
         onClose={close}
       />
 
-      {dialog?.type === 'edit' && (
-        <FormModal open onClose={close} size="md" title={t('admin.results.editTitle')} formId="edit-result-form" submitLabel={t('admin.manual.save')}>
-          <ManualResultForm formId="edit-result-form" initial={dialog.record} onSubmit={saveEdit} />
-        </FormModal>
-      )}
+      {dialog?.type === 'edit' && <VotesForm candidate={dialog.record} onClose={close} />}
     </div>
   )
 }
-
-/** Link used by the dashboard to open one ward in the list. */
-export const adminWardLink = (wardNo) => `/admin/results?ward=${wardNo}#result-list`

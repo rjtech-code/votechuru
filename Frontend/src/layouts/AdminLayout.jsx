@@ -26,12 +26,12 @@ export default function AdminLayout() {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  if (!user) return <Navigate to="/admin" replace state={{ from: location.pathname }} />
+  if (!user) return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />
 
   const handleLogout = () => {
     logout()
     notify(t('admin.signedOut'))
-    navigate('/admin', { replace: true })
+    navigate('/admin/login', { replace: true })
   }
 
   return (

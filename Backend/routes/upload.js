@@ -2,7 +2,7 @@ import path from 'node:path'
 import { Router } from 'express'
 import multer from 'multer'
 import { requireAdmin } from '../middleware/authMiddleware.js'
-import { uploadResults, uploadWards } from '../controllers/uploadController.js'
+import { uploadCandidates, uploadResults, uploadWards } from '../controllers/uploadController.js'
 import { config } from '../config.js'
 
 const EXCEL_MIME_TYPES = new Set([
@@ -40,7 +40,8 @@ function receiveFile(req, res, next) {
 }
 
 const router = Router()
-router.post('/upload-results', requireAdmin, receiveFile, uploadResults)
 router.post('/upload-wards', requireAdmin, receiveFile, uploadWards)
+router.post('/upload-candidates', requireAdmin, receiveFile, uploadCandidates)
+router.post('/upload-results', requireAdmin, receiveFile, uploadResults)
 
 export default router

@@ -48,7 +48,7 @@ function WardForm({ ward, onSubmit, onClose }) {
         <Field label={t(`${F}wardNo`)} required error={err('wardNo')} hint={ward ? t(`${F}wardFixed`) : undefined}>
           {(p) => <Input {...p} {...bind('wardNo')} inputMode="numeric" disabled={Boolean(ward)} />}
         </Field>
-        <Field label={t(`${F}totalVoters`)} error={err('totalVoters')}>
+        <Field label={t(`${F}totalVoters`)} required error={err('totalVoters')}>
           {(p) => <Input {...p} {...bind('totalVoters')} inputMode="numeric" />}
         </Field>
         <Field label={t(`${F}wardName`)} error={err('wardName')} className="sm:col-span-2">
@@ -137,7 +137,7 @@ export default function AdminWards() {
         <Card as="section" aria-labelledby="ward-upload-title">
           <CardHeader
             title={<span id="ward-upload-title">{t('admin.wards.uploadTitle')}</span>}
-            description={<ColumnList required={['Ward No.']} optional={['Ward Name', 'Area / Localities', 'Total Voters']} requiredKey="admin.wards.requiredColumn" optionalKey="admin.wards.optionalColumns" />}
+            description={<ColumnList required={['Ward No.', 'Total Voters']} optional={['Ward Name', 'Area / Localities']} requiredKey="admin.wards.requiredColumns" optionalKey="admin.wards.optionalColumns" />}
           />
           <div className="p-5">
             <WardUploadSection />

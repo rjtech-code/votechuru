@@ -1,16 +1,18 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Upload } from 'lucide-react'
+import { Plus, Upload } from 'lucide-react'
 import AdminPageHeader from '../../components/admin/AdminPageHeader'
 import SummaryStats from '../../components/admin/SummaryStats'
 import WardResultList from '../../components/admin/WardResultList'
 import { Card, CardHeader } from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
+import { useResults } from '../../context/ResultsContext'
 import { useLanguage } from '../../i18n/I18nContext'
 
-/** /admin/results — summary and the ward-wise result list (declare / reopen / edit / delete). */
+/** /admin/results — result management: summary and the ward-wise list (upload / view / declare). */
 export default function AdminResults() {
   const { t } = useLanguage()
+  const { candidates } = useResults()
   const { hash } = useLocation()
 
   useEffect(() => {
@@ -23,8 +25,8 @@ export default function AdminResults() {
         title={t('admin.results.title')}
         description={t('admin.results.description')}
         actions={
-          <Button to="/admin/upload" icon={Upload}>
-            {t('admin.nav.upload')}
+          <Button to="/admin/results/upload" icon={Plus}>
+            {t('admin.resultUpload.title')}
           </Button>
         }
       />
@@ -37,7 +39,17 @@ export default function AdminResults() {
         </section>
 
         <Card as="section" id="result-list" aria-labelledby="list-title" className="scroll-mt-20">
-          <CardHeader title={<span id="list-title">{t('admin.results.listTitle')}</span>} description={t('admin.results.listText')} />
+          <CardHeader
+            title={<span id="list-title">{t('admin.results.listTitle')}</span>}
+            description={t('admin.results.listText')}
+            action={
+              candidates.length > 0 && (
+                <Button to="/admin/results/upload" variant="secondary" icon={Upload}>
+                  {t('admin.results.uploadAll')}
+                </Button>
+              )
+            }
+          />
           <div className="p-4 sm:p-5">
             <WardResultList />
           </div>

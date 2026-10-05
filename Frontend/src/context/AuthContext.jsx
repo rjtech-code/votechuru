@@ -66,7 +66,7 @@ export function AuthProvider({ children }) {
   const handleUnauthorized = useCallback(() => {
     writeSession(null)
     setSession(null)
-    navigate('/admin', { replace: true, state: { reason: 'expired' } })
+    navigate('/admin/login', { replace: true, state: { reason: 'expired' } })
   }, [navigate])
 
   const value = useMemo(

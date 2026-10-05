@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { FileSpreadsheet, Upload, X } from 'lucide-react'
+import { FileSpreadsheet } from 'lucide-react'
 import Button from '../ui/Button'
 import { useLanguage } from '../../i18n/I18nContext'
 import { cn } from '../../lib/format'
@@ -7,41 +7,24 @@ import { cn } from '../../lib/format'
 const ACCEPT = '.xlsx,.xls'
 const MAX_BYTES = 5 * 1024 * 1024
 
-const formatSize = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`)
-
-/** Drag & drop / file-picker area. Calls `onUpload(file)` when the admin confirms. */
-export default function ExcelUploader({ onUpload, busy }) {
+/**
+ * Drag & drop / file-picker area. "Choose Excel File" opens the system file picker and
+ * `onSelect(file)` runs as soon as a file is chosen or dropped — no second step.
+ */
+export default function ExcelUploader({ onSelect, busy }) {
   const { t } = useLanguage()
   const inputRef = useRef(null)
-  const [file, setFile] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [errorKey, setErrorKey] = useState('')
 
   // Quick client-side check; the server validates the file again.
-  const pick = (candidate) => {
-    if (!candidate) return
-    if (!/\.(xlsx|xls)$/i.test(candidate.name)) {
-      setFile(null)
-      setErrorKey('admin.upload.wrongType')
-      return
-    }
-    if (candidate.size > MAX_BYTES) {
-      setFile(null)
-      setErrorKey('admin.upload.tooLarge')
-      return
-    }
-    setErrorKey('')
-    setFile(candidate)
-  }
-
-  const clear = () => {
-    setFile(null)
+  const pick = (file) => {
     if (inputRef.current) inputRef.current.value = ''
-  }
-
-  const upload = async () => {
-    const succeeded = await onUpload(file)
-    if (succeeded) clear()
+    if (!file || busy) return
+    if (!/\.(xlsx|xls)$/i.test(file.name)) return setErrorKey('admin.upload.wrongType')
+    if (file.size > MAX_BYTES) return setErrorKey('admin.upload.tooLarge')
+    setErrorKey('')
+    onSelect(file)
   }
 
   return (
@@ -87,31 +70,6 @@ export default function ExcelUploader({ onUpload, busy }) {
           {t(errorKey)}
         </p>
       )}
-
-      {file && (
-        <div className="mt-4 flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <FileSpreadsheet className="h-5 w-5 shrink-0 text-[#1d8a4b]" aria-hidden="true" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-navy-900">{file.name}</p>
-            <p className="text-xs text-slate-500">{formatSize(file.size)}</p>
-          </div>
-          <button
-            type="button"
-            onClick={clear}
-            disabled={busy}
-            className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            aria-label={t('admin.upload.removeFile')}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-      )}
-
-      <div className="mt-4 flex justify-end">
-        <Button icon={Upload} onClick={upload} disabled={!file || busy} loading={busy}>
-          {t('admin.upload.submit')}
-        </Button>
-      </div>
     </div>
   )
 }

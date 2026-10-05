@@ -1,9 +1,9 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, BarChart3, CheckCircle2, FileSpreadsheet, MapPin, PenLine } from 'lucide-react'
+import { ArrowRight, BarChart3, CalendarClock, CheckCircle2, FileSpreadsheet, MapPin, Upload, Users } from 'lucide-react'
 import AdminPageHeader from '../../components/admin/AdminPageHeader'
-import { adminWardLink } from '../../components/admin/WardResultList'
-import ScheduleCard from '../../components/admin/ScheduleCard'
 import SummaryStats from '../../components/admin/SummaryStats'
+import WardDetailModal from '../../components/admin/WardDetailModal'
 import StatusBadge, { wardStatus } from '../../components/StatusBadge'
 import { Card, CardHeader } from '../../components/ui/Card'
 import Table from '../../components/ui/Table'
@@ -14,19 +14,29 @@ import { useLanguage } from '../../i18n/I18nContext'
 
 const QUICK_LINKS = [
   { to: '/admin/wards', labelKey: 'admin.nav.wards', icon: MapPin },
-  { to: '/admin/upload#upload', labelKey: 'admin.dashboard.quickUpload', icon: FileSpreadsheet },
-  { to: '/admin/upload#manual', labelKey: 'admin.dashboard.quickManual', icon: PenLine },
+  { to: '/admin/candidates', labelKey: 'admin.nav.candidates', icon: Users },
+  { to: '/admin/results/upload', labelKey: 'admin.resultUpload.title', icon: Upload },
   { to: '/admin/results#result-list', labelKey: 'admin.dashboard.quickResults', icon: BarChart3 },
 ]
 
+/** /admin — Super Admin Home: statistics, shortcuts and the wards awaiting declaration. */
 export default function AdminDashboard() {
   const { t, formatNumber } = useLanguage()
   const { wards } = useResults()
+  const [detailWard, setDetailWard] = useState(null)
   const pending = wards.filter((w) => w.status !== 'declared')
 
   const C = 'admin.columns.'
   const columns = [
-    { key: 'ward', header: t(`${C}ward`), render: (w) => <span className="whitespace-nowrap font-semibold text-navy-900">{t('common.ward', { ward: w.wardNo })}</span> },
+    {
+      key: 'ward',
+      header: t(`${C}ward`),
+      render: (w) => (
+        <button type="button" onClick={() => setDetailWard(w.wardNo)} className="whitespace-nowrap font-semibold text-navy-900 hover:text-brand-700 hover:underline">
+          {t('common.ward', { ward: w.wardNo })}
+        </button>
+      ),
+    },
     { key: 'candidates', header: t(`${C}candidates`), align: 'right', className: 'tabular-nums', render: (w) => formatNumber(w.rows.length) },
     { key: 'votes', header: t(`${C}totalVotes`), align: 'right', className: 'tabular-nums', render: (w) => formatNumber(w.totalVotes) },
     { key: 'status', header: t('result.status'), render: (w) => <StatusBadge status={wardStatus(w)} /> },
@@ -35,24 +45,29 @@ export default function AdminDashboard() {
       header: <span className="sr-only">{t('common.actions')}</span>,
       align: 'right',
       render: (w) => (
-        <Link to={adminWardLink(w.wardNo)} className="inline-flex items-center gap-0.5 whitespace-nowrap text-sm font-bold text-brand-600 hover:text-brand-800">
+        <button type="button" onClick={() => setDetailWard(w.wardNo)} className="inline-flex items-center gap-0.5 whitespace-nowrap text-sm font-bold text-brand-600 hover:text-brand-800">
           {t('admin.dashboard.review')} <ArrowRight className="h-4 w-4" aria-hidden="true" />
           <span className="sr-only">{t('common.for', { label: t('common.ward', { ward: w.wardNo }) })}</span>
-        </Link>
+        </button>
       ),
     },
   ]
 
   return (
     <>
-      <AdminPageHeader title={t('admin.dashboard.title')} description={t('admin.dashboard.welcome')} />
+      <AdminPageHeader
+        title={t('admin.dashboard.title')}
+        description={t('admin.dashboard.welcome')}
+        actions={
+          <Button to="/admin/settings/election-schedule" icon={CalendarClock}>
+            {t('admin.dashboard.electionSchedule')}
+          </Button>
+        }
+      />
 
-      <div className="space-y-6">
-        <ScheduleCard />
-        <SummaryStats />
-      </div>
+      <SummaryStats />
 
-      <nav aria-label={t('admin.nav.dashboard')} className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <nav aria-label={t('admin.dashboard.title')} className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {QUICK_LINKS.map(({ to, labelKey, icon: Icon }) => (
           <Link
             key={to}
@@ -81,6 +96,8 @@ export default function AdminDashboard() {
           <EmptyState icon={CheckCircle2} title={t('admin.dashboard.noPending')} description={null} />
         )}
       </Card>
+
+      <WardDetailModal wardNo={detailWard} onClose={() => setDetailWard(null)} />
     </>
   )
 }
